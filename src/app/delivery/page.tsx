@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Order, OrderStatus } from '@/types';
 
+import { Truck, MapPin, User, CheckCircle, Package, ArrowRight, Clock, Phone } from 'lucide-react';
+
 export default function DeliveryDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,82 +43,138 @@ export default function DeliveryDashboard() {
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }} className="animate-fade-in">
+    <div style={{ padding: '2.5rem', background: 'var(--bg-primary)', minHeight: '100vh' }} className="animate-fade-in">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
-         <h1 style={{ fontSize: '2.5rem' }}>Suivi des <span style={{ color: 'var(--accent-success)' }}>Livraisons</span></h1>
-         <Link href="/" className="btn-secondary">Quitter</Link>
+         <div>
+            <h1 style={{ fontSize: '2.2rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <Truck size={32} color="var(--accent-primary)" /> Logistique <span style={{ color: 'var(--accent-primary)' }}>& Livraisons</span>
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>Suivez vos livreurs et assurez la satisfaction client</p>
+         </div>
+         <div style={{ display: 'flex', gap: '1.5rem' }}>
+            <div className="glass-panel" style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--bg-secondary)' }}>
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--accent-primary)' }}></div>
+                <span style={{ fontWeight: '800' }}>{orders.filter(o => o.status === 'en_livraison').length} EN ROUTE</span>
+            </div>
+         </div>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem' }}>
         {/* Prêt par la cuisine */}
-        <section>
-          <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ width: '12px', height: '12px', background: 'var(--accent-primary)', borderRadius: '50%' }}></span>
-            Prêtes pour Départ
-          </h2>
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0 0.5rem' }}>
+            <Package size={18} color="var(--accent-primary)" />
+            <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>PRÊTS POUR DÉPART</h2>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
             {orders.filter(o => o.status === 'pret').map(o => (
-              <div key={o.id} className="glass-panel" style={{ padding: '1.5rem', background: '#fff' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                    <h3 style={{ fontSize: '1.1rem' }}>#{o.id.slice(0, 4).toUpperCase()}</h3>
-                    <span style={{ background: 'var(--bg-tertiary)', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
+              <div key={o.id} className="glass-panel hover-scale" style={{ padding: '1.8rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-primary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: '900' }}>#{o.id.slice(0, 4).toUpperCase()}</h3>
+                    <div style={{ padding: '0.4rem 0.8rem', background: o.payment_method === 'online' ? 'var(--accent-success)' : 'var(--accent-warning)', borderRadius: '10px', fontSize: '0.65rem', fontWeight: '900', color: 'white' }}>
                         {o.payment_method === 'online' ? 'PAYÉ' : 'À PAYER'}
-                    </span>
+                    </div>
                 </div>
-                <p style={{ fontWeight: '700', marginBottom: '0.5rem' }}>👤 {o.customername}</p>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.2rem' }}>📍 {o.deliveryaddress}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.8rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <User size={14} color="var(--text-secondary)" />
+                        </div>
+                        <span style={{ fontWeight: '800', fontSize: '0.95rem' }}>{o.customername}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <MapPin size={14} color="var(--text-secondary)" />
+                        </div>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{o.deliveryaddress}</span>
+                    </div>
+                </div>
                 <button 
-                  className="btn-primary" 
-                  style={{ width: '100%', padding: '1rem', background: 'var(--accent-secondary)' }} 
+                  className="hover-scale" 
+                  style={{ width: '100%', padding: '1.2rem', borderRadius: '16px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.8rem', boxShadow: 'var(--shadow-glow)' }} 
                   onClick={() => updateStatus(o.id, 'en_livraison')}
                 >
-                  🚀 Lancer la Course
+                  DÉMARRER COURSE <ArrowRight size={18} />
                 </button>
               </div>
             ))}
-            {orders.filter(o => o.status === 'pret').length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>Rien à expédier.</p>}
+            {orders.filter(o => o.status === 'pret').length === 0 && (
+                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '24px' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Aucun colis en attente</p>
+                </div>
+            )}
           </div>
         </section>
 
         {/* En Cours */}
-        <section>
-          <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ width: '12px', height: '12px', background: 'var(--accent-secondary)', borderRadius: '50%' }}></span>
-            En route
-          </h2>
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0 0.5rem' }}>
+            <Truck size={18} color="var(--accent-secondary)" />
+            <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>EN ROUTE</h2>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
             {orders.filter(o => o.status === 'en_livraison').map(o => (
-              <div key={o.id} className="glass-panel" style={{ padding: '1.5rem', border: '1px solid var(--accent-secondary)', background: 'rgba(59, 130, 246, 0.02)' }}>
-                <h3 style={{ marginBottom: '0.5rem' }}>{o.customername}</h3>
-                <p style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--accent-primary)', marginBottom: '1rem' }}>Total: {o.total.toLocaleString()} F</p>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>📍 {o.deliveryaddress}</p>
-                <button 
-                  className="btn-primary" 
-                  style={{ width: '100%', padding: '1rem', background: 'var(--accent-success)' }} 
-                  onClick={() => updateStatus(o.id, 'livre')}
-                >
-                  ✅ Terminer Livraison
-                </button>
+              <div key={o.id} className="glass-panel hover-scale" style={{ padding: '1.8rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-secondary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: '900' }}>{o.customername}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-secondary)' }}>
+                        <Clock size={14} />
+                        <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>32 min</span>
+                    </div>
+                </div>
+                <p style={{ fontSize: '1.5rem', fontWeight: '900', color: 'white', marginBottom: '1.2rem' }}>{o.total.toLocaleString()} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>F</span></p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
+                    <MapPin size={14} /> {o.deliveryaddress}
+                </div>
+                <div style={{ display: 'flex', gap: '0.8rem' }}>
+                    <button style={{ flex: 1, padding: '1rem', borderRadius: '12px', background: 'var(--bg-tertiary)', border: 'none', color: 'white', cursor: 'pointer' }}><Phone size={18} /></button>
+                    <button 
+                        className="hover-scale" 
+                        style={{ flex: 3, padding: '1rem', borderRadius: '12px', background: 'var(--accent-success)', color: 'white', border: 'none', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} 
+                        onClick={() => updateStatus(o.id, 'livre')}
+                    >
+                        <CheckCircle size={18} /> TERMINER
+                    </button>
+                </div>
               </div>
             ))}
-            {orders.filter(o => o.status === 'en_livraison').length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>Aucune course active.</p>}
+            {orders.filter(o => o.status === 'en_livraison').length === 0 && (
+                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '24px' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Aucune course active</p>
+                </div>
+            )}
           </div>
         </section>
 
         {/* Historique du jour */}
-        <section>
-          <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem', color: 'var(--text-muted)' }}>Livrées</h2>
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0 0.5rem' }}>
+            <CheckCircle size={18} color="var(--accent-success)" />
+            <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>SUCCÈS (JOUR)</h2>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
             {orders.filter(o => o.status === 'livre').map(o => (
-              <div key={o.id} className="glass-panel" style={{ padding: '1rem', opacity: 0.6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <p style={{ fontWeight: '600' }}>{o.customername}</p>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>#{o.id.slice(0, 4).toUpperCase()}</p>
+              <div key={o.id} className="glass-panel" style={{ padding: '1.2rem', background: 'var(--bg-secondary)', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.8 }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <CheckCircle size={16} color="var(--accent-success)" />
+                    </div>
+                    <div>
+                        <p style={{ fontWeight: '800', fontSize: '0.9rem' }}>{o.customername}</p>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>#{o.id.slice(0, 4).toUpperCase()}</p>
+                    </div>
                 </div>
-                <p style={{ fontWeight: '800', color: 'var(--accent-success)' }}>{o.total.toLocaleString()} F</p>
+                <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontWeight: '900', color: 'var(--accent-success)' }}>{o.total.toLocaleString()} F</p>
+                    <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Livré à 14:02</p>
+                </div>
               </div>
             ))}
-            {orders.filter(o => o.status === 'livre').length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>Pas encore de succès.</p>}
+            {orders.filter(o => o.status === 'livre').length === 0 && (
+                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '24px' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Aucune livraison terminée</p>
+                </div>
+            )}
           </div>
         </section>
       </div>

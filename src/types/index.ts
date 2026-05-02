@@ -6,6 +6,9 @@ export interface User {
   role: Role;
   baseSalary?: number;
   pinCode?: string; // For rapid POS login
+  phone?: string;
+  email?: string;
+  avatar?: string;
 }
 
 export type OrderType = 'salle' | 'external';

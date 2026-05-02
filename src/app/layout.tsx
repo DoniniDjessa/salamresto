@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   description: "Next-gen restaurant operating system",
 };
 
+import Sidebar from "@/components/Sidebar";
+import { SidebarProvider } from "@/context/SidebarContext";
+import ClientLayoutWrapper from "@/components/ClientLayoutWrapper";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -24,7 +28,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" className={`${inter.variable} ${outfit.variable}`}>
-      <body>{children}</body>
+      <body style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', margin: 0, minHeight: '100vh' }}>
+        <SidebarProvider>
+          <Sidebar />
+          <ClientLayoutWrapper>
+            {children}
+          </ClientLayoutWrapper>
+        </SidebarProvider>
+      </body>
     </html>
   );
 }

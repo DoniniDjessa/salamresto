@@ -5,6 +5,10 @@ import { supabase } from '@/lib/supabase';
 
 type Period = 'today' | 'week' | 'month' | 'custom';
 
+import { CreditCard, Plus, Filter, Trash2, Calendar, TrendingDown } from 'lucide-react';
+
+type Period = 'today' | 'week' | 'month' | 'custom';
+
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [title, setTitle] = useState('');
@@ -69,85 +73,120 @@ export default function ExpensesPage() {
   const totalExpenses = expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }} className="animate-fade-in">
+    <div style={{ padding: '2.5rem', background: 'var(--bg-primary)', minHeight: '100vh' }} className="animate-fade-in">
        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
-          <h1 style={{ fontSize: '2.5rem' }}>Gestion des <span style={{ color: 'var(--accent-danger)' }}>Dépenses Équipe</span></h1>
-          <Link href="/" className="btn-secondary">Retour</Link>
+          <div>
+            <h1 style={{ fontSize: '2.2rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <CreditCard size={32} color="var(--accent-primary)" /> Gestion des <span style={{ color: 'var(--accent-primary)' }}>Dépenses</span>
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>Contrôlez les coûts opérationnels de votre établissement</p>
+          </div>
        </header>
 
-       {/* Filters */}
-       <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className={period === 'today' ? 'btn-primary' : 'btn-secondary'} onClick={() => setPeriod('today')}>Aujourd'hui</button>
-          <button className={period === 'week' ? 'btn-primary' : 'btn-secondary'} onClick={() => setPeriod('week')}>7 Jours</button>
-          <button className={period === 'month' ? 'btn-primary' : 'btn-secondary'} onClick={() => setPeriod('month')}>30 Jours</button>
-          <button className={period === 'custom' ? 'btn-primary' : 'btn-secondary'} onClick={() => setPeriod('custom')}>Personnalisé</button>
-          
-          {period === 'custom' && (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input type="date" className="input-field" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                <span>à</span>
-                <input type="date" className="input-field" value={endDate} onChange={e => setEndDate(e.target.value)} />
-            </div>
-          )}
-       </div>
-
-       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2rem' }}>
-          {/* Form Left */}
-          <section className="glass-panel" style={{ padding: '2rem', background: '#fff', height: 'fit-content' }}>
-             <h2 style={{ marginBottom: '1.5rem', fontSize: '1.2rem' }}>Nouvelle Dépense</h2>
-             <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Motif / Libellé</label>
-                    <input 
-                        className="input-field" 
-                        placeholder="Ex: Achat viande, Facture..." 
-                        value={title}
-                        onChange={e => setTitle(e.target.value)}
-                        required
-                    />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Montant (F)</label>
-                    <input 
-                        type="number"
-                        className="input-field" 
-                        placeholder="0 F" 
-                        value={amount}
-                        onChange={e => setAmount(e.target.value)}
-                        required
-                    />
-                </div>
-                <button 
-                    type="submit" 
-                    className="btn-primary" 
-                    disabled={submitting}
-                    style={{ background: 'var(--accent-danger)', marginTop: '0.5rem' }}
-                >
-                    {submitting ? 'Enregistrement...' : 'Valider la dépense'}
-                </button>
-             </form>
-
-             <div style={{ marginTop: '2.5rem', paddingTop: '2.5rem', borderTop: '1px solid var(--border-color)' }}>
-                 <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: '700', marginBottom: '0.5rem' }}>TOTAL DÉPENSÉ</p>
-                 <h2 style={{ fontSize: '2rem', color: 'var(--accent-danger)' }}>{totalExpenses.toLocaleString()} F</h2>
-             </div>
-          </section>
-
-          {/* List Right */}
-          <section>
-             <h2 style={{ marginBottom: '1.5rem', fontSize: '1.2rem' }}>Historique récent</h2>
-             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {loading ? <p>Chargement...</p> : expenses.length === 0 ? <p style={{ color: 'var(--text-muted)' }}>Aucune dépense.</p> : expenses.map(e => (
-                    <div key={e.id} className="glass-panel" style={{ padding: '1.2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
-                        <div>
-                            <p style={{ fontWeight: '700', fontSize: '1rem' }}>{e.title}</p>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{new Date(e.created_at).toLocaleDateString()}</p>
-                        </div>
-                        <p style={{ fontWeight: '900', color: 'var(--accent-danger)', fontSize: '1.1rem' }}>-{e.amount.toLocaleString()} F</p>
+       <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '2.5rem', alignItems: 'start' }}>
+          {/* Left Panel: Form & Stats */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+             <section className="glass-panel" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderRadius: '28px' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                    <Plus size={20} color="var(--accent-primary)" /> Nouveau Retrait
+                </h2>
+                <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>MOTIF / LIBELLÉ</label>
+                        <input 
+                            className="glass-panel" 
+                            style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '14px', outline: 'none' }}
+                            placeholder="Ex: Facture CIE, Achat Marché..." 
+                            value={title}
+                            onChange={e => setTitle(e.target.value)}
+                            required
+                        />
                     </div>
-                ))}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>MONTANT (F)</label>
+                        <input 
+                            type="number"
+                            className="glass-panel" 
+                            style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '14px', outline: 'none', fontSize: '1.2rem', fontWeight: '800' }}
+                            placeholder="0 F" 
+                            value={amount}
+                            onChange={e => setAmount(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <button 
+                        type="submit" 
+                        className="hover-scale" 
+                        disabled={submitting}
+                        style={{ padding: '1.2rem', borderRadius: '16px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '1rem', cursor: 'pointer', boxShadow: 'var(--shadow-glow)' }}
+                    >
+                        {submitting ? 'Enregistrement...' : 'ENREGISTRER'}
+                    </button>
+                </form>
+             </section>
+
+             <div className="glass-panel" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderLeft: '6px solid var(--accent-primary)', borderRadius: '28px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ padding: '0.6rem', background: 'rgba(139, 92, 246, 0.1)', borderRadius: '10px' }}>
+                        <TrendingDown color="var(--accent-primary)" size={20} />
+                    </div>
+                    <p style={{ color: 'var(--text-secondary)', fontWeight: '800', fontSize: '0.8rem' }}>TOTAL PÉRIODE</p>
+                </div>
+                <h2 style={{ fontSize: '2.5rem', fontWeight: '900' }}>{totalExpenses.toLocaleString()} <span style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>F</span></h2>
              </div>
-          </section>
+          </div>
+
+          {/* Right Panel: List & Filters */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+             <div className="glass-panel" style={{ padding: '1rem 2rem', background: 'var(--bg-secondary)', borderRadius: '24px', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                <Filter size={18} color="var(--text-muted)" />
+                <div style={{ display: 'flex', gap: '0.8rem' }}>
+                    {['today', 'week', 'month', 'custom'].map(p => (
+                        <button 
+                            key={p}
+                            onClick={() => setPeriod(p as Period)}
+                            style={{ padding: '0.6rem 1rem', borderRadius: '10px', background: period === p ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: 'white', border: 'none', fontSize: '0.75rem', fontWeight: '800', cursor: 'pointer' }}
+                        >
+                            {p.toUpperCase()}
+                        </button>
+                    ))}
+                </div>
+                {period === 'custom' && (
+                    <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', marginLeft: 'auto' }}>
+                        <input type="date" className="glass-panel" style={{ padding: '0.5rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', fontSize: '0.8rem', borderRadius: '8px' }} value={startDate} onChange={e => setStartDate(e.target.value)} />
+                        <span style={{ opacity: 0.3 }}>-</span>
+                        <input type="date" className="glass-panel" style={{ padding: '0.5rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', fontSize: '0.8rem', borderRadius: '8px' }} value={endDate} onChange={e => setEndDate(e.target.value)} />
+                    </div>
+                )}
+             </div>
+
+             <section className="glass-panel" style={{ background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '32px', flex: 1 }}>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: '900', marginBottom: '2rem' }}>Historique des Sorties</h2>
+                {loading ? <p>Mise à jour...</p> : expenses.length === 0 ? <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '4rem' }}>Aucune dépense enregistrée.</p> : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {expenses.map(e => (
+                            <div key={e.id} className="glass-panel hover-scale" style={{ padding: '1.2rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-tertiary)', borderRadius: '20px' }}>
+                                <div style={{ display: 'flex', gap: '1.2rem', alignItems: 'center' }}>
+                                    <div style={{ padding: '0.8rem', background: 'var(--bg-secondary)', borderRadius: '12px', color: 'var(--accent-primary)' }}>
+                                        <CreditCard size={20} />
+                                    </div>
+                                    <div>
+                                        <p style={{ fontWeight: '800', fontSize: '1.05rem', marginBottom: '0.2rem' }}>{e.title}</p>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <Calendar size={12} /> {new Date(e.created_at).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <p style={{ fontWeight: '900', color: 'white', fontSize: '1.3rem' }}>{e.amount.toLocaleString()} F</p>
+                                    <span style={{ fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>CASH / SORTIE CAISSE</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+             </section>
+          </div>
        </div>
     </div>
   );
