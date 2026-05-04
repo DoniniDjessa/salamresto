@@ -1,18 +1,23 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Order, OrderStatus } from '@/types';
+import { Truck, MapPin, User, CheckCircle, Package, ArrowRight, Clock, Phone, Plus, X } from 'lucide-react';
 
-import { Truck, MapPin, User, CheckCircle, Package, ArrowRight, Clock, Phone } from 'lucide-react';
-
-export default function DeliveryDashboard() {
+export default function LivraisonsDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newOrder, setNewOrder] = useState({
+    customername: '',
+    deliveryaddress: '',
+    total: '',
+    payment_method: 'cash'
+  });
 
   useEffect(() => {
     fetchOrders();
-    const channel = supabase.channel('resto-orders-delivery')
+    const channel = supabase.channel('resto-orders-livraisons')
       .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, () => {
         fetchOrders();
       })
@@ -26,7 +31,7 @@ export default function DeliveryDashboard() {
       .from('resto-orders')
       .select('*')
       .eq('type', 'external')
-      .in('status', ['pret', 'en_livraison', 'livre'])
+      .in('status', ['en_attente', 'en_preparation', 'pret', 'en_livraison', 'livre'])
       .order('updated_at', { ascending: false });
     
     if (data) setOrders(data);
@@ -42,22 +47,84 @@ export default function DeliveryDashboard() {
     if (!error) fetchOrders();
   };
 
+  const handleCreateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { error } = await supabase.from('resto-orders').insert([{
+      type: 'external',
+      customername: newOrder.customername,
+      deliveryaddress: newOrder.deliveryaddress,
+      total: parseFloat(newOrder.total),
+      payment_method: newOrder.payment_method,
+      status: 'en_attente',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      items: [] // Manual order usually starts empty or as a package
+    }]);
+
+    if (!error) {
+      setShowAddForm(false);
+      setNewOrder({ customername: '', deliveryaddress: '', total: '', payment_method: 'cash' });
+      fetchOrders();
+    } else {
+      alert("Erreur: " + error.message);
+    }
+  };
+
   return (
     <div style={{ padding: '2.5rem', background: 'var(--bg-primary)', minHeight: '100vh' }} className="animate-fade-in">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
          <div>
             <h1 style={{ fontSize: '2.2rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <Truck size={32} color="var(--accent-primary)" /> Logistique <span style={{ color: 'var(--accent-primary)' }}>& Livraisons</span>
+                <Truck size={32} color="var(--accent-primary)" /> Livraisons <span style={{ color: 'var(--accent-primary)' }}>& Logistique</span>
             </h1>
-            <p style={{ color: 'var(--text-secondary)' }}>Suivez vos livreurs et assurez la satisfaction client</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Suivez vos livreurs et gérez vos expéditions</p>
          </div>
          <div style={{ display: 'flex', gap: '1.5rem' }}>
-            <div className="glass-panel" style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--bg-secondary)' }}>
-                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--accent-primary)' }}></div>
-                <span style={{ fontWeight: '800' }}>{orders.filter(o => o.status === 'en_livraison').length} EN ROUTE</span>
-            </div>
+            <button 
+              onClick={() => setShowAddForm(true)}
+              className="btn-primary hover-scale" 
+              style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderRadius: '12px' }}
+            >
+                <Plus size={20} /> NOUVELLE LIVRAISON
+            </button>
          </div>
       </header>
+
+      {/* Add Order Modal Overlay */}
+      {showAddForm && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="glass-panel" style={{ padding: '2.5rem', width: '500px', background: 'var(--bg-secondary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: '900' }}>Créer une Livraison</h2>
+              <button onClick={() => setShowAddForm(false)} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}><X size={24} /></button>
+            </div>
+            <form onSubmit={handleCreateOrder} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>NOM DU CLIENT</label>
+                <input required value={newOrder.customername} onChange={e => setNewOrder({...newOrder, customername: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>ADRESSE DE LIVRAISON</label>
+                <input required value={newOrder.deliveryaddress} onChange={e => setNewOrder({...newOrder, deliveryaddress: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>MONTANT TOTAL</label>
+                  <input required type="number" value={newOrder.total} onChange={e => setNewOrder({...newOrder, total: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>PAIEMENT</label>
+                  <select value={newOrder.payment_method} onChange={e => setNewOrder({...newOrder, payment_method: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }}>
+                    <option value="cash">Espèces</option>
+                    <option value="online">Payé (Lien/Carte)</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1.2rem', fontWeight: '800' }}>ENREGISTRER LA LIVRAISON</button>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem' }}>
         {/* Prêt par la cuisine */}
@@ -67,7 +134,7 @@ export default function DeliveryDashboard() {
             <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>PRÊTS POUR DÉPART</h2>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-            {orders.filter(o => o.status === 'pret').map(o => (
+            {orders.filter(o => o.status === 'pret' || o.status === 'en_attente').map(o => (
               <div key={o.id} className="glass-panel hover-scale" style={{ padding: '1.8rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-primary)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: '900' }}>#{o.id.slice(0, 4).toUpperCase()}</h3>
@@ -98,11 +165,6 @@ export default function DeliveryDashboard() {
                 </button>
               </div>
             ))}
-            {orders.filter(o => o.status === 'pret').length === 0 && (
-                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '24px' }}>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Aucun colis en attente</p>
-                </div>
-            )}
           </div>
         </section>
 
@@ -119,10 +181,10 @@ export default function DeliveryDashboard() {
                     <h3 style={{ fontSize: '1rem', fontWeight: '900' }}>{o.customername}</h3>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-secondary)' }}>
                         <Clock size={14} />
-                        <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>32 min</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>En cours...</span>
                     </div>
                 </div>
-                <p style={{ fontSize: '1.5rem', fontWeight: '900', color: 'white', marginBottom: '1.2rem' }}>{o.total.toLocaleString()} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>F</span></p>
+                <p style={{ fontSize: '1.5rem', fontWeight: '900', color: 'white', marginBottom: '1.2rem' }}>{o.total?.toLocaleString()} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>F</span></p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
                     <MapPin size={14} /> {o.deliveryaddress}
                 </div>
@@ -138,11 +200,6 @@ export default function DeliveryDashboard() {
                 </div>
               </div>
             ))}
-            {orders.filter(o => o.status === 'en_livraison').length === 0 && (
-                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '24px' }}>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Aucune course active</p>
-                </div>
-            )}
           </div>
         </section>
 
@@ -165,16 +222,11 @@ export default function DeliveryDashboard() {
                     </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontWeight: '900', color: 'var(--accent-success)' }}>{o.total.toLocaleString()} F</p>
-                    <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Livré à 14:02</p>
+                    <p style={{ fontWeight: '900', color: 'var(--accent-success)' }}>{o.total?.toLocaleString()} F</p>
+                    <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{new Date(o.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                 </div>
               </div>
             ))}
-            {orders.filter(o => o.status === 'livre').length === 0 && (
-                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '24px' }}>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Aucune livraison terminée</p>
-                </div>
-            )}
           </div>
         </section>
       </div>

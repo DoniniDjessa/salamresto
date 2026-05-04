@@ -58,17 +58,60 @@ function POSContent() {
     if (!selectedTable) return alert("Veuillez sélectionner une table !");
     if (cart.length === 0) return alert("Le panier est vide.");
     
-    const { error } = await supabase.from('resto-orders').insert([{
-      type: 'salle',
-      tablenumber: selectedTable,
-      items: cart,
-      status: 'en_attente',
-      total: total,
-      created_at: new Date().toISOString()
-    }]);
+    setLoading(true);
+
+    // Check for existing active order for this table
+    const { data: existingOrders } = await supabase
+      .from('resto-orders')
+      .select('*')
+      .eq('tablenumber', selectedTable)
+      .neq('status', 'paye')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const existingOrder = existingOrders && existingOrders.length > 0 ? existingOrders[0] : null;
+
+    let error;
+    if (existingOrder) {
+      // Merge items
+      const mergedItems = [...existingOrder.items];
+      cart.forEach(cartItem => {
+        const index = mergedItems.findIndex(item => item.id === cartItem.id);
+        if (index > -1) {
+          mergedItems[index].quantity += cartItem.quantity;
+        } else {
+          mergedItems.push(cartItem);
+        }
+      });
+
+      const newTotal = (existingOrder.total || 0) + total;
+
+      const { error: err } = await supabase
+        .from('resto-orders')
+        .update({ 
+          items: mergedItems, 
+          total: newTotal,
+          status: 'en_attente'
+        })
+        .eq('id', existingOrder.id);
+      error = err;
+    } else {
+      // Create new order
+      const { error: err } = await supabase.from('resto-orders').insert([{
+        type: 'salle',
+        tablenumber: selectedTable,
+        items: cart,
+        status: 'en_attente',
+        total: total,
+        created_at: new Date().toISOString()
+      }]);
+      error = err;
+    }
+
+    setLoading(false);
 
     if (!error) {
-      alert(`Commande Table ${selectedTable} envoyée !`);
+      alert(existingOrder ? `Commande Table ${selectedTable} mise à jour !` : `Commande Table ${selectedTable} envoyée !`);
       setCart([]);
       setSelectedTable(null);
     } else {
@@ -120,8 +163,8 @@ function POSContent() {
       <main style={{ flex: 1, padding: '2rem', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <header style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-                <h1 style={{ fontSize: '1.8rem', fontWeight: '900' }}>Vente Salle</h1>
-                <p style={{ color: 'var(--text-secondary)' }}>{selectedTable ? `Table ${selectedTable} - En prise de commande` : "Sélectionnez une table pour commencer"}</p>
+                <h1 style={{ fontSize: '1.8rem', fontWeight: '900' }}>Enregistrements</h1>
+                <p style={{ color: 'var(--text-secondary)' }}>{selectedTable ? `Table ${selectedTable} - Prise de commande` : "Sélectionnez une table pour enregistrer"}</p>
             </div>
             <div className="glass-panel" style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.8rem', background: 'var(--bg-secondary)' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>RECHERCHE</span>
@@ -129,7 +172,7 @@ function POSContent() {
             </div>
         </header>
 
-        {loading ? <p>Mise à jour du menu...</p> : (
+        {loading && products.length === 0 ? <p>Mise à jour du menu...</p> : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1.2rem' }}>
             {products.map(p => (
               <div 
@@ -219,8 +262,8 @@ function POSContent() {
             <span style={{ fontWeight: '800', fontSize: '1.2rem' }}>Total</span>
             <span style={{ fontSize: '1.8rem', fontWeight: '900', color: 'var(--accent-primary)' }}>{total.toLocaleString()} F</span>
           </div>
-          <button className="hover-scale" style={{ width: '100%', padding: '1.4rem', borderRadius: '20px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '1.1rem', boxShadow: 'var(--shadow-glow)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }} onClick={dispatchOrder}>
-            <Send size={20} /> ENVOYER EN CUISINE
+          <button className="hover-scale" style={{ width: '100%', padding: '1.4rem', borderRadius: '20px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '1.1rem', boxShadow: 'var(--shadow-glow)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }} onClick={dispatchOrder} disabled={loading}>
+            <Send size={20} /> {loading ? 'TRAITEMENT...' : 'ENVOYER EN CUISINE'}
           </button>
         </div>
       </aside>
