@@ -32,7 +32,8 @@ import {
   QrCode,
   UserCheck,
   ChevronLeft,
-  TrendingDown
+  TrendingDown,
+  Edit2
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -56,7 +57,12 @@ export default function AdminDashboard() {
 
   // HR form
   const [newUserName, setNewUserName] = useState('');
-  const [newUserRole, setNewUserRole] = useState<Role>('serveur' as any);
+  const [newUserRole, setNewUserRole] = useState<any>('serveur');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editProdName, setEditProdName] = useState('');
+  const [editProdPrice, setEditProdPrice] = useState('');
+  const [editProdCategory, setEditProdCategory] = useState<string>('');
   
   // Exp form
   const [expTitle, setExpTitle] = useState('');
@@ -173,6 +179,26 @@ export default function AdminDashboard() {
       if(!confirm("Supprimer ce produit ?")) return;
       const { error } = await supabase.from('resto-products').delete().eq('id', id);
       if(!error) fetchData();
+  }
+
+  async function updateProduct() {
+      if (!editingProduct) return;
+      setUploading(true);
+      
+      const { error } = await supabase.from('resto-products').update({
+          name: editProdName,
+          price: parseFloat(editProdPrice),
+          category: editProdCategory
+      }).eq('id', editingProduct.id);
+
+      if (!error) {
+          alert("Produit mis à jour !");
+          setEditingProduct(null);
+          fetchData();
+      } else {
+          alert("Erreur : " + error.message);
+      }
+      setUploading(false);
   }
 
   async function addUser() {
@@ -568,18 +594,46 @@ export default function AdminDashboard() {
 
               {/* TAB: Menu */}
 
-             {activeTab === 'menu' && (
-               <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
-                  <div className="glass-panel" style={{ padding: '2.5rem', background: 'var(--bg-secondary)', borderRadius: '32px' }}>
-                     <h2 style={{ fontSize: '1.4rem', fontWeight: '900', marginBottom: '2rem' }}>Gestion du Menu</h2>
-                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+              {activeTab === 'menu' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+                   <div className="glass-panel" style={{ padding: '2.5rem', background: 'var(--bg-secondary)', borderRadius: '32px' }}>
+                      <h2 style={{ fontSize: '1.4rem', fontWeight: '900', marginBottom: '2rem' }}>Gestion du Menu</h2>
+                      
+                      {/* Category Tabs */}
+                      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', overflowX: 'auto', paddingBottom: '1rem' }}>
+                         {['all', 'plat principal', 'boissons', 'dessert', 'collation', 'autres'].map(cat => (
+                             <button
+                                 key={cat}
+                                 onClick={() => setSelectedCategory(cat)}
+                                 style={{
+                                     padding: '0.8rem 1.5rem',
+                                     borderRadius: '12px',
+                                     background: selectedCategory === cat ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                                     color: 'white',
+                                     border: 'none',
+                                     fontWeight: '800',
+                                     fontSize: '0.8rem',
+                                     cursor: 'pointer',
+                                     textTransform: 'uppercase',
+                                     whiteSpace: 'nowrap',
+                                     transition: 'all 0.2s'
+                                 }}
+                             >
+                                 {cat === 'all' ? 'TOUT' : cat}
+                             </button>
+                         ))}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                             <input className="glass-panel" style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', borderRadius: '14px' }} value={newProductName} onChange={e => setNewProductName(e.target.value)} placeholder="Nom du produit" />
                             <input className="glass-panel" style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', borderRadius: '14px' }} value={newProductPrice} onChange={e => setNewProductPrice(e.target.value)} placeholder="Prix de base (F)" type="number" />
                             <select className="glass-panel" style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', borderRadius: '14px' }} value={newProductCategory} onChange={e => setNewProductCategory(e.target.value as any)}>
-                                <option value="dish">Plat Principal</option>
-                                <option value="drink">Boisson</option>
+                                <option value="plat principal">Plat Principal</option>
+                                <option value="boissons">Boissons</option>
                                 <option value="dessert">Dessert</option>
+                                <option value="collation">Collation</option>
+                                <option value="autres">Autres</option>
                             </select>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
@@ -595,7 +649,7 @@ export default function AdminDashboard() {
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1.5rem' }}>
-                     {products.map(p => (
+                     {products.filter(p => selectedCategory === 'all' || p.category === selectedCategory).map(p => (
                          <div key={p.id} className="glass-panel hover-scale" style={{ padding: '1rem', background: 'var(--bg-secondary)', borderRadius: '24px', textAlign: 'center' }}>
                             <div style={{ 
                                 background: p.image ? `url(${p.image}) center/cover` : 'var(--bg-tertiary)', 
@@ -612,10 +666,49 @@ export default function AdminDashboard() {
                             </div>
                            <h4 style={{ fontWeight: '800', fontSize: '0.9rem', marginBottom: '0.3rem' }}>{p.name}</h4>
                            <p style={{ color: 'var(--accent-primary)', fontWeight: '900' }}>{p.price.toLocaleString()} F</p>
-                           <button onClick={() => deleteProduct(p.id)} style={{ marginTop: '1rem', background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                           <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '1rem' }}>
+                                <button 
+                                    onClick={() => {
+                                        setEditingProduct(p);
+                                        setEditProdName(p.name);
+                                        setEditProdPrice(p.price.toString());
+                                        setEditProdCategory(p.category || '');
+                                    }} 
+                                    style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer' }}
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                                <button onClick={() => deleteProduct(p.id)} style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                           </div>
                         </div>
                      ))}
                   </div>
+
+                  {/* Edit Product Modal */}
+                  {editingProduct && (
+                      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div className="glass-panel" style={{ padding: '2.5rem', width: '500px', background: 'var(--bg-secondary)', borderRadius: '32px' }}>
+                              <h3 style={{ marginBottom: '2rem', fontSize: '1.4rem', fontWeight: '900' }}>Modifier : {editingProduct.name}</h3>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                                  <input className="glass-panel" style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', borderRadius: '14px' }} value={editProdName} onChange={e => setEditProdName(e.target.value)} placeholder="Nom" />
+                                  <input className="glass-panel" style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', borderRadius: '14px' }} value={editProdPrice} onChange={e => setEditProdPrice(e.target.value)} placeholder="Prix" type="number" />
+                                  <select className="glass-panel" style={{ padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', color: 'white', borderRadius: '14px' }} value={editProdCategory} onChange={e => setEditProdCategory(e.target.value)}>
+                                      <option value="plat principal">Plat Principal</option>
+                                      <option value="boissons">Boissons</option>
+                                      <option value="dessert">Dessert</option>
+                                      <option value="collation">Collation</option>
+                                      <option value="autres">Autres</option>
+                                  </select>
+                                  <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                                      <button className="hover-scale" style={{ flex: 1, padding: '1rem', borderRadius: '14px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '900', cursor: 'pointer' }} onClick={updateProduct} disabled={uploading}>
+                                          {uploading ? 'MIS À JOUR...' : 'ENREGISTRER'}
+                                      </button>
+                                      <button className="hover-scale" style={{ flex: 1, padding: '1rem', borderRadius: '14px', background: 'var(--bg-tertiary)', color: 'white', border: 'none', fontWeight: '900', cursor: 'pointer' }} onClick={() => setEditingProduct(null)}>ANNULER</button>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  )}
                </div>
              )}
 

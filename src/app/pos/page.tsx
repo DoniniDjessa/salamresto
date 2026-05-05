@@ -12,6 +12,7 @@ function POSContent() {
   const [cart, setCart] = useState<{ id: string; name: string; price: number; quantity: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOptionProduct, setSelectedOptionProduct] = useState<Product | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const searchParams = useSearchParams();
   const tableParam = searchParams.get('table');
@@ -172,9 +173,35 @@ function POSContent() {
             </div>
         </header>
 
+        {/* Category Tabs */}
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+             {['all', 'plat principal', 'boissons', 'dessert', 'collation', 'autres'].map(cat => (
+                 <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    style={{
+                        padding: '0.8rem 1.5rem',
+                        borderRadius: '12px',
+                        background: selectedCategory === cat ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                        color: 'white',
+                        border: 'none',
+                        fontWeight: '800',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        textTransform: 'uppercase',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.2s',
+                        boxShadow: selectedCategory === cat ? 'var(--shadow-glow)' : 'none'
+                    }}
+                 >
+                    {cat === 'all' ? 'TOUT' : cat}
+                 </button>
+             ))}
+        </div>
+
         {loading && products.length === 0 ? <p>Mise à jour du menu...</p> : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1.2rem' }}>
-            {products.map(p => (
+            {products.filter(p => selectedCategory === 'all' || p.category === selectedCategory).map(p => (
               <div 
                 key={p.id} 
                 className="glass-panel hover-scale"
