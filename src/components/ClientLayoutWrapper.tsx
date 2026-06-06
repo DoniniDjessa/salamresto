@@ -13,7 +13,6 @@ function AppLoader() {
       alignItems: 'center', justifyContent: 'center',
       background: 'var(--bg-primary)', gap: '1.5rem',
     }}>
-      {/* Animated logo */}
       <div style={{ position: 'relative', width: '64px', height: '64px' }}>
         <div style={{
           width: '64px', height: '64px', borderRadius: '18px',
@@ -24,7 +23,6 @@ function AppLoader() {
         }}>
           <span style={{ fontSize: '1.75rem' }}>🍲</span>
         </div>
-        {/* Spinning ring */}
         <div style={{
           position: 'absolute', inset: '-6px',
           borderRadius: '24px',
@@ -44,7 +42,6 @@ function AppLoader() {
         </p>
       </div>
 
-      {/* Progress dots */}
       <div style={{ display: 'flex', gap: '0.4rem' }}>
         {[0, 1, 2].map(i => (
           <div key={i} style={{
@@ -70,7 +67,7 @@ function AppLoader() {
 }
 
 const ClientLayoutWrapper = ({ children }: { children: React.ReactNode }) => {
-  const { isExpanded } = useSidebar();
+  const { isExpanded, isMobile } = useSidebar();
   const { session, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -90,9 +87,9 @@ const ClientLayoutWrapper = ({ children }: { children: React.ReactNode }) => {
     <main
       className="main-content"
       style={{
-        marginLeft: isExpanded ? 'var(--sidebar-width-expanded)' : 'var(--sidebar-width-collapsed)',
+        marginLeft: isMobile ? 0 : (isExpanded ? 'var(--sidebar-width-expanded)' : 'var(--sidebar-width-collapsed)'),
         minHeight: '100vh',
-        transition: 'margin-left 0.3s ease'
+        transition: 'margin-left 0.3s ease',
       }}
     >
       {children}

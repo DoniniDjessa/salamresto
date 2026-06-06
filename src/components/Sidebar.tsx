@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard, Monitor, ChefHat, Truck,
   Activity, Utensils, Users, UserCircle, UserCheck, Wallet,
-  PieChart, Settings, ChevronLeft, ChevronRight, LogOut, LayoutGrid
+  PieChart, Settings, ChevronLeft, ChevronRight, LogOut, LayoutGrid, Menu
 } from 'lucide-react';
 import { useSidebar } from '@/context/SidebarContext';
 import { useAuth } from '@/context/AuthContext';
@@ -34,7 +34,7 @@ const adminItems = [
 function SidebarContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isExpanded, toggleSidebar } = useSidebar();
+  const { isExpanded, isMobile, toggleSidebar, closeSidebar } = useSidebar();
   const { profile, signOut } = useAuth();
 
   const isActive = (path: string) => {
@@ -97,8 +97,30 @@ function SidebarContent() {
     );
 
   return (
-    <div
-      style={{
+    <>
+      {/* Dark backdrop — mobile only, dismisses sidebar on tap */}
+      {isMobile && isExpanded && (
+        <div onClick={closeSidebar} style={{
+          position: 'fixed', inset: 0, zIndex: 99,
+          background: 'rgba(0,0,0,0.5)',
+        }} />
+      )}
+
+      {/* Floating hamburger — mobile only, visible when sidebar is hidden */}
+      {isMobile && !isExpanded && (
+        <button onClick={toggleSidebar} style={{
+          position: 'fixed', top: '0.875rem', left: '0.875rem', zIndex: 101,
+          width: '38px', height: '38px', borderRadius: '10px',
+          background: '#1C1917', border: '1px solid rgba(255,255,255,0.12)',
+          color: '#A8A29E', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', cursor: 'pointer',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+        }}>
+          <Menu size={18} />
+        </button>
+      )}
+
+      <div style={{
         width: isExpanded ? 'var(--sidebar-width-expanded)' : 'var(--sidebar-width-collapsed)',
         height: '100vh',
         position: 'fixed',
@@ -107,10 +129,12 @@ function SidebarContent() {
         borderRight: '1px solid rgba(255,255,255,0.06)',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'width 0.3s ease',
+        /* On mobile: slide fully off-screen when closed, full-width when open */
+        transform: isMobile && !isExpanded ? 'translateX(-100%)' : 'translateX(0)',
+        transition: 'transform 0.28s ease, width 0.28s ease',
         overflow: 'hidden',
       }}
-    >
+      >
       {/* Header */}
       <div style={{
         padding: '1.2rem 0.85rem',
@@ -156,6 +180,7 @@ function SidebarContent() {
                 href={item.path}
                 className={`sidebar-item ${active ? 'sidebar-active-item' : ''}`}
                 title={!isExpanded ? item.name : ''}
+                onClick={isMobile ? closeSidebar : undefined}
                 style={itemStyle(active)}
               >
                 <Icon size={19} style={{ minWidth: '19px', flexShrink: 0 }} />
@@ -179,6 +204,7 @@ function SidebarContent() {
                 href={item.path}
                 className={`sidebar-item ${active ? 'sidebar-active-item' : ''}`}
                 title={!isExpanded ? item.name : ''}
+                onClick={isMobile ? closeSidebar : undefined}
                 style={itemStyle(active)}
               >
                 <Icon size={19} style={{ minWidth: '19px', flexShrink: 0 }} />
@@ -209,7 +235,8 @@ function SidebarContent() {
           </button>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
