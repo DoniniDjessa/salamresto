@@ -1,167 +1,227 @@
 "use client";
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Order, OrderStatus } from '@/types';
+import { ChefHat, Clock, CheckCircle2, Play, Coffee } from 'lucide-react';
+import RoleGuard from '@/components/RoleGuard';
 
-const statusColors: Record<string, string> = {
-  en_attente: 'var(--accent-danger)',
-  en_preparation: 'var(--accent-warning)',
-  pret: 'var(--accent-success)',
+const CAVE_CATS = new Set(['boissons', 'cave', 'thé/café', 'the/cafe']);
+
+const STATUS_COLOR: Record<string, string> = {
+  en_attente:    'var(--accent-danger)',
+  en_preparation:'var(--accent-warning)',
+  pret:          'var(--accent-success)',
+};
+const STATUS_BG: Record<string, string> = {
+  en_attente:    'rgba(239,68,68,0.08)',
+  en_preparation:'rgba(245,158,11,0.08)',
+  pret:          'rgba(16,185,129,0.08)',
 };
 
-import { ChefHat, Clock, CheckCircle2, ChevronRight, Play } from 'lucide-react';
+function TicketCard({
+  order, onUpdate, isCave = false,
+}: {
+  order: any;
+  onUpdate: (id: string, s: OrderStatus) => void;
+  isCave?: boolean;
+}) {
+  const age = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
+  const isUrgent = age > 15 && order.status === 'en_attente';
+  const borderColor = isCave ? '#6366F1' : STATUS_COLOR[order.status];
 
+  return (
+    <div className="ticket-card animate-fade-in" style={{
+      borderTop: `3px solid ${borderColor}`,
+      background: isUrgent ? 'rgba(239,68,68,0.03)' : 'white',
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.875rem' }}>
+        <div>
+          <p style={{ fontSize: '0.62rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+            {order.type === 'salle' ? `TABLE ${order.tablenumber}` : order.customername || 'EXTERNE'}
+          </p>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: '900', marginTop: '0.1rem' }}>
+            #{order.id.slice(0, 5).toUpperCase()}
+          </h3>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.6rem', borderRadius: '100px', background: isUrgent ? 'rgba(239,68,68,0.1)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+          <Clock size={11} color={isUrgent ? 'var(--accent-danger)' : 'var(--text-muted)'} />
+          <span style={{ fontSize: '0.65rem', fontWeight: '800', color: isUrgent ? 'var(--accent-danger)' : 'var(--text-muted)' }}>{age}m</span>
+        </div>
+      </div>
+
+      {/* Items */}
+      <div style={{ background: 'var(--bg-secondary)', borderRadius: '10px', padding: '0.75rem', marginBottom: '0.875rem', border: '1px solid var(--border-color)' }}>
+        <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+          {order.items?.map((item: any, i: number) => (
+            <li key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: '800' }}>
+              <span>{item.quantity}× {item.name}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Actions */}
+      {order.status === 'en_attente' && (
+        isCave ? (
+          <button onClick={() => onUpdate(order.id, 'pret')}
+            style={{ width: '100%', padding: '0.7rem', borderRadius: '9px', background: '#6366F1', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+            <CheckCircle2 size={14} /> SERVIR
+          </button>
+        ) : (
+          <button onClick={() => onUpdate(order.id, 'en_preparation')}
+            style={{ width: '100%', padding: '0.7rem', borderRadius: '9px', background: 'var(--accent-danger)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+            <Play size={14} /> COMMENCER
+          </button>
+        )
+      )}
+      {order.status === 'en_preparation' && !isCave && (
+        <button onClick={() => onUpdate(order.id, 'pret')}
+          style={{ width: '100%', padding: '0.7rem', borderRadius: '9px', background: 'var(--accent-success)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16,185,129,0.22)' }}>
+          <CheckCircle2 size={14} /> TERMINER
+        </button>
+      )}
+      {order.status === 'pret' && (
+        <button onClick={() => onUpdate(order.id, 'livre')}
+          style={{ width: '100%', padding: '0.7rem', borderRadius: '9px', background: 'var(--text-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer' }}>
+          SERVIR / EXPÉDIER ✓
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function KitchenPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders,     setOrders]     = useState<Order[]>([]);
+  const [products,   setProducts]   = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [activeTab,  setActiveTab]  = useState<'cuisine' | 'cave'>('cuisine');
 
   useEffect(() => {
     fetchOrders();
-    const channel = supabase.channel('resto-orders-kds')
-      .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, () => {
-        fetchOrders();
-      })
+    loadProducts();
+    const ch = supabase.channel('resto-orders-kds')
+      .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, fetchOrders)
       .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   async function fetchOrders() {
-    const { data } = await supabase
-      .from('resto-orders')
-      .select('*')
+    const { data } = await supabase.from('resto-orders').select('*')
       .in('status', ['en_attente', 'en_preparation', 'pret'])
       .order('created_at', { ascending: true });
-    
     if (data) setOrders(data);
     setLoading(false);
   }
 
-  const updateStatus = async (orderId: string, newStatus: OrderStatus) => {
-    const { error } = await supabase
-      .from('resto-orders')
-      .update({ status: newStatus })
-      .eq('id', orderId);
-    
-    if (!error) fetchOrders();
+  async function loadProducts() {
+    const { data } = await supabase.from('resto-products').select('id,category');
+    if (data) setProducts(data);
+  }
+
+  const updateStatus = async (id: string, s: OrderStatus) => {
+    await supabase.from('resto-orders').update({ status: s }).eq('id', id);
+    fetchOrders();
   };
 
-  const pending = orders.filter(o => o.status === 'en_attente');
-  const prepping = orders.filter(o => o.status === 'en_preparation');
-  const ready = orders.filter(o => o.status === 'pret');
+  const productCatMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    products.forEach(p => { m[p.id] = p.category || ''; });
+    return m;
+  }, [products]);
 
-  const TicketCard = ({ order }: { order: any }) => (
-    <div className="glass-panel" style={{ padding: '1.5rem', background: 'var(--bg-secondary)', borderLeft: `4px solid ${statusColors[order.status]}`, borderRadius: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
-        <div>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900' }}>#{order.id.slice(0, 4).toUpperCase()}</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
-                <Clock size={12} color="var(--text-muted)" />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>
-                    {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-            </div>
-        </div>
-        <div style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-tertiary)', borderRadius: '10px', fontSize: '0.8rem', fontWeight: '800', color: 'var(--accent-primary)' }}>
-            {order.type === 'salle' ? `T${order.tablenumber}` : 'LIVR.'}
-        </div>
-      </div>
-      
-      <div style={{ background: 'var(--bg-tertiary)', borderRadius: '16px', padding: '1rem', marginBottom: '1.5rem' }}>
-        <ul style={{ padding: 0, listStyle: 'none', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {order.items.map((item: any, i: number) => (
-            <li key={i} style={{ fontSize: '1rem', fontWeight: '800', display: 'flex', justifyContent: 'space-between', color: 'var(--text-primary)' }}>
-                <span>{item.quantity}x {item.name}</span>
-            </li>
-            ))}
-        </ul>
-      </div>
-      
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        {order.status === 'en_attente' && (
-          <button className="hover-scale" style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} onClick={() => updateStatus(order.id, 'en_preparation')}>
-            <Play size={16} /> COMMENCER
-          </button>
-        )}
-        {order.status === 'en_preparation' && (
-          <button 
-            className="hover-scale" 
-            style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', background: 'var(--accent-success)', color: 'white', border: 'none', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.2)' }} 
-            onClick={() => updateStatus(order.id, 'pret')}
-          >
-            <CheckCircle2 size={16} /> TERMINER
-          </button>
-        )}
-        {order.status === 'pret' && (
-          <button 
-            className="hover-scale" 
-            style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', background: 'var(--text-primary)', color: 'var(--bg-primary)', border: 'none', fontWeight: '800', cursor: 'pointer' }} 
-            onClick={() => updateStatus(order.id, 'livre')}
-          >
-            SERVIR / EXPÉDIER
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  const isCaveOrder = (order: any) =>
+    order.items?.length > 0 &&
+    order.items.every((item: any) =>
+      CAVE_CATS.has(productCatMap[(item.id as string || '').split('__')[0]] || '')
+    );
+
+  const cuisineOrders = orders.filter(o => !isCaveOrder(o));
+  const caveOrders    = orders.filter(o => isCaveOrder(o));
+
+  const cuisineCols = [
+    { label: 'EN ATTENTE',     color: STATUS_COLOR.en_attente,    bg: STATUS_BG.en_attente,    orders: cuisineOrders.filter(o => o.status === 'en_attente')     },
+    { label: 'EN PRÉPARATION', color: STATUS_COLOR.en_preparation, bg: STATUS_BG.en_preparation, orders: cuisineOrders.filter(o => o.status === 'en_preparation') },
+    { label: 'PRÊT AU PASSE',  color: STATUS_COLOR.pret,          bg: STATUS_BG.pret,          orders: cuisineOrders.filter(o => o.status === 'pret')           },
+  ];
+
+  const caveCols = [
+    { label: 'EN ATTENTE', color: '#6366F1',               bg: 'rgba(99,102,241,0.08)',  orders: caveOrders.filter(o => ['en_attente','en_preparation'].includes(o.status as string)) },
+    { label: 'SERVI',      color: 'var(--accent-success)', bg: 'rgba(16,185,129,0.08)', orders: caveOrders.filter(o => o.status === 'pret') },
+  ];
+
+  const activeCols  = activeTab === 'cuisine' ? cuisineCols  : caveCols;
+  const gridCols    = activeTab === 'cuisine' ? 3 : 2;
+  const pendingCave = caveOrders.filter(o => o.status === 'en_attente').length;
 
   return (
-    <div style={{ padding: '2rem', height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
-         <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <ChefHat size={32} color="var(--accent-primary)" /> Écran Cuisine <span style={{ color: 'var(--accent-primary)' }}>(KDS)</span>
-            </h1>
-            <p style={{ color: 'var(--text-secondary)' }}>Gestion des commandes en temps réel</p>
-         </div>
-         <div style={{ display: 'flex', gap: '1.2rem' }}>
-            <div className="glass-panel" style={{ padding: '0.8rem 1.8rem', display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '100px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                <span style={{ fontWeight: '900', color: 'var(--accent-danger)', fontSize: '1.4rem' }}>{pending.length}</span>
-                <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: '800', letterSpacing: '0.05em' }}>EN ATTENTE</span>
+    <RoleGuard allowedRoles={['superAdmin', 'admin', 'manager', 'caisse', 'serveur']}>
+    <div style={{ padding: '1.5rem', height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
+
+      {/* Header */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(249,115,22,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ChefHat size={22} color="var(--accent-primary)" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.3rem', fontWeight: '900' }}>Écran Cuisine</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span className="live-dot" />
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Temps réel · {orders.length} ticket(s) actif(s)</p>
             </div>
-            <div className="glass-panel" style={{ padding: '0.8rem 1.8rem', display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '100px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                <span style={{ fontWeight: '900', color: 'var(--accent-success)', fontSize: '1.4rem' }}>{ready.length}</span>
-                <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: '800', letterSpacing: '0.05em' }}>PRÊT / PASSE</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {/* Tab switcher */}
+          <div style={{ display: 'flex', gap: '0', background: 'var(--bg-secondary)', borderRadius: '10px', padding: '3px', border: '1px solid var(--border-color)' }}>
+            {(['cuisine', 'cave'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                style={{ padding: '0.4rem 1.1rem', borderRadius: '7px', background: activeTab === tab ? 'white' : 'transparent', color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer', transition: 'all 0.15s', boxShadow: activeTab === tab ? 'var(--shadow-sm)' : 'none', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                {tab === 'cuisine' ? <ChefHat size={13} /> : <Coffee size={13} />}
+                {tab === 'cuisine' ? 'Cuisine' : 'Cave'}
+                {tab === 'cave' && pendingCave > 0 && (
+                  <span style={{ background: '#6366F1', color: 'white', padding: '0.05rem 0.4rem', borderRadius: '100px', fontSize: '0.6rem', fontWeight: '900' }}>{pendingCave}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Count badges */}
+          {activeCols.map(c => (
+            <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.875rem', background: c.bg, border: `1px solid ${c.color}22`, borderRadius: '100px' }}>
+              <span style={{ fontSize: '1rem', fontWeight: '900', color: c.color }}>{c.orders.length}</span>
+              <span style={{ fontSize: '0.62rem', fontWeight: '900', color: c.color, letterSpacing: '0.06em' }}>{c.label}</span>
             </div>
-         </div>
+          ))}
+        </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem', flex: 1, overflow: 'hidden' }}>
-        {/* En attente */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0.5rem' }}>
-              <h2 style={{ fontSize: '0.8rem', fontWeight: '900', color: statusColors.en_attente, letterSpacing: '0.1em' }}>EN ATTENTE</h2>
-              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: '900' }}>{pending.length}</div>
+      {/* KDS Columns */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${gridCols}, 1fr)`, gap: '1.25rem', flex: 1, overflow: 'hidden' }}>
+        {activeCols.map(col => (
+          <div key={col.label} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div className="col-header">
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: col.color, flexShrink: 0 }} />
+              <span className="col-header-label" style={{ color: col.color }}>{col.label}</span>
+              <span className="col-count">{col.orders.length}</span>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingRight: '0.25rem' }}>
+              {col.orders.map(o => (
+                <TicketCard key={o.id} order={o} onUpdate={updateStatus} isCave={activeTab === 'cave'} />
+              ))}
+              {col.orders.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', background: col.bg, borderRadius: '14px', border: `1px dashed ${col.color}30` }}>
+                  {activeTab === 'cave' && <Coffee size={22} color={col.color} style={{ opacity: 0.3, marginBottom: '0.5rem', display: 'block', margin: '0 auto 0.5rem' }} />}
+                  <p style={{ fontSize: '0.78rem', fontWeight: '700' }}>Aucun ticket</p>
+                </div>
+              )}
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
-            {pending.map(o => <TicketCard key={o.id} order={o} />)}
-          </div>
-        </div>
-
-        {/* En Prepa */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0.5rem' }}>
-              <h2 style={{ fontSize: '0.8rem', fontWeight: '900', color: statusColors.en_preparation, letterSpacing: '0.1em' }}>EN PRÉPARATION</h2>
-              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: '900' }}>{prepping.length}</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
-            {prepping.map(o => <TicketCard key={o.id} order={o} />)}
-          </div>
-        </div>
-
-        {/* Pret */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0.5rem' }}>
-              <h2 style={{ fontSize: '0.8rem', fontWeight: '900', color: statusColors.pret, letterSpacing: '0.1em' }}>PRÊT / AU PASSE</h2>
-              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: '900' }}>{ready.length}</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
-            {ready.map(o => <TicketCard key={o.id} order={o} />)}
-          </div>
-        </div>
+        ))}
       </div>
     </div>
+    </RoleGuard>
   );
 }

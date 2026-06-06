@@ -1,228 +1,231 @@
 "use client";
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-
-import { TrendingUp, ShoppingBag, Truck, Users, Activity, Bell, Search, ChevronRight, ArrowUpRight, DollarSign, Clock, Settings, Monitor, Smartphone } from 'lucide-react';
+import {
+  TrendingUp, ShoppingBag, Truck, Activity,
+  Bell, Search, ChevronRight, Clock, Monitor, Smartphone
+} from 'lucide-react';
+import RoleGuard from '@/components/RoleGuard';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Home() {
-  const router = useRouter();
+  const { profile } = useAuth();
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalRevenue: 0, totalExpenses: 0, deliveryWaiting: 0, deliverySuccess: 0 });
   const [loading, setLoading] = useState(true);
-  
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [pin, setPin] = useState('');
 
   useEffect(() => {
     fetchHomeData();
-    const channel = supabase.channel('home-updates')
-      .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, () => {
-        fetchHomeData();
-      })
+    const ch = supabase.channel('home-updates')
+      .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, fetchHomeData)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   async function fetchHomeData() {
-    const { data: orders } = await supabase.from('resto-orders').select('*').order('created_at', { ascending: false }).limit(10);
-    const { data: allOrders } = await supabase.from('resto-orders').select('total, type, status');
-    const { data: expenses } = await supabase.from('resto-expenses').select('amount');
-    
-    if (orders) setRecentOrders(orders);
-    
-    let totalRev = 0;
-    let totalExp = 0;
-    let dWaiting = 0;
-    let dSuccess = 0;
-
-    if (allOrders) {
-        totalRev = allOrders.reduce((acc, o) => acc + (o.total || 0), 0);
-        dWaiting = allOrders.filter(o => o.type === 'external' && o.status !== 'livre' && o.status !== 'annule').length;
-        dSuccess = allOrders.filter(o => o.type === 'external' && o.status === 'livre').length;
-    }
-    if (expenses) {
-        totalExp = expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
-    }
-
-    setStats({ 
-        totalRevenue: totalRev, 
-        totalExpenses: totalExp, 
-        deliveryWaiting: dWaiting,
-        deliverySuccess: dSuccess
-    });
+    const [{ data: orders }, { data: allOrders }, { data: expenses }] = await Promise.all([
+      supabase.from('resto-orders').select('*').order('created_at', { ascending: false }).limit(8),
+      supabase.from('resto-orders').select('total, type, status'),
+      supabase.from('resto-expenses').select('amount'),
+    ]);
+    if (orders)    setRecentOrders(orders);
+    // Only count orders that have been paid (termine = payment collected, paye = table cleared)
+    const totalRevenue  = allOrders?.filter(o => o.status === 'termine' || o.status === 'paye').reduce((a, o) => a + (o.total || 0), 0) ?? 0;
+    const deliveryWaiting = allOrders?.filter(o => o.type === 'external' && o.status !== 'livre' && o.status !== 'annule').length ?? 0;
+    const deliverySuccess = allOrders?.filter(o => o.type === 'external' && o.status === 'livre').length ?? 0;
+    const totalExpenses   = expenses?.reduce((a, e) => a + (e.amount || 0), 0) ?? 0;
+    setStats({ totalRevenue, totalExpenses, deliveryWaiting, deliverySuccess });
     setLoading(false);
   }
 
-  const handleAdminAccess = () => {
-    if (pin === '0044') {
-        router.push('/admin');
-    } else {
-        alert("Code incorrect !");
-        setPin('');
-    }
+  const tiles = [
+    {
+      label: 'REVENU TOTAL',
+      value: `${stats.totalRevenue.toLocaleString()} F`,
+      icon: <TrendingUp size={18} />,
+      color: 'var(--accent-primary)',
+      bg: 'rgba(249,115,22,0.09)',
+      sub: `${recentOrders.length} commandes`,
+    },
+    {
+      label: 'COMMANDES AUJOURD\'HUI',
+      value: `${recentOrders.length}`,
+      icon: <ShoppingBag size={18} />,
+      color: 'var(--accent-success)',
+      bg: 'rgba(16,185,129,0.09)',
+      sub: 'en temps réel',
+    },
+    {
+      label: 'LIVRAISONS RÉUSSIES',
+      value: `${stats.deliverySuccess}`,
+      icon: <Truck size={18} />,
+      color: 'var(--accent-warning)',
+      bg: 'rgba(245,158,11,0.09)',
+      sub: `${stats.deliveryWaiting} en attente`,
+    },
+    {
+      label: 'DÉPENSES',
+      value: `${stats.totalExpenses.toLocaleString()} F`,
+      icon: <Activity size={18} />,
+      color: 'var(--accent-danger)',
+      bg: 'rgba(239,68,68,0.09)',
+      sub: 'ce mois',
+    },
+  ];
+
+  const statusStyle = (s: string): React.CSSProperties => {
+    if (s === 'paye')       return { background: 'rgba(16,185,129,0.1)', color: '#059669' };
+    if (s === 'en_attente') return { background: 'rgba(239,68,68,0.1)', color: '#DC2626' };
+    return { background: 'rgba(249,115,22,0.1)', color: '#EA580C' };
   };
 
   return (
-    <div style={{ padding: '2.5rem', background: 'var(--bg-primary)', minHeight: '100vh' }} className="animate-fade-in">
-      
-      {/* Top Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
-         <div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '900', color: 'white', marginBottom: '0.5rem' }}>Bonjour, <span style={{ color: 'var(--accent-primary)' }}>Chef Zack</span></h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Voici l'état de votre restaurant aujourd'hui.</p>
-         </div>
-         <div style={{ display: 'flex', gap: '1.2rem', alignItems: 'center' }}>
-            <div className="glass-panel" style={{ padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.8rem', background: 'var(--bg-secondary)', borderRadius: '16px', width: '300px' }}>
-                <Search size={18} color="var(--text-muted)" />
-                <input placeholder="Rechercher..." style={{ background: 'transparent', border: 'none', color: 'white', outline: 'none', width: '100%', fontSize: '0.9rem' }} />
-            </div>
-            <button className="glass-panel" style={{ width: '48px', height: '48px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)' }}>
-                <Bell size={20} color="var(--text-secondary)" />
-            </button>
-         </div>
+    <RoleGuard allowedRoles={['superAdmin', 'admin', 'manager', 'caisse']}>
+    <div className="page-wrap animate-fade-in">
+
+      {/* Header */}
+      <header className="page-header">
+        <div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: '900', marginBottom: '0.2rem' }}>
+            Bonjour, <span style={{ color: 'var(--accent-primary)' }}>{profile?.name || 'Chef'}</span> 👋
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Voici l'état de votre restaurant aujourd'hui.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
+          <div style={{ padding: '0.65rem 1rem', display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'white', border: '1.5px solid var(--border-color)', borderRadius: '12px', width: '240px', boxShadow: 'var(--shadow-sm)' }}>
+            <Search size={15} color="var(--text-muted)" />
+            <input placeholder="Rechercher..." style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', width: '100%', fontSize: '0.8rem' }} />
+          </div>
+          <button style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1.5px solid var(--border-color)', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
+            <Bell size={17} color="var(--text-secondary)" />
+          </button>
+        </div>
       </header>
 
-      {/* Hero Section / Main Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '3rem' }}>
-         <div className="glass-panel hover-scale" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-primary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(139, 92, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <TrendingUp size={20} color="var(--accent-primary)" />
-                </div>
-                <ArrowUpRight size={18} color="var(--accent-success)" />
+      {/* Stat Tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem', marginBottom: '2.5rem' }}>
+        {tiles.map(t => (
+          <div key={t.label} className="stat-tile">
+            <div className="stat-tile-top" style={{ background: t.color }} />
+            <div className="stat-tile-icon" style={{ background: t.bg, color: t.color }}>
+              {t.icon}
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontWeight: '800', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>REVENU TOTAL</p>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '900' }}>{stats.totalRevenue.toLocaleString()} F</h2>
-         </div>
-
-         <div className="glass-panel hover-scale" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-success)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <ShoppingBag size={20} color="var(--accent-success)" />
-                </div>
-                <ArrowUpRight size={18} color="var(--accent-success)" />
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontWeight: '800', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>COMMANDES</p>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '900' }}>{recentOrders.length} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>AUJOURD'HUI</span></h2>
-         </div>
-
-         <div className="glass-panel hover-scale" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-secondary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Truck size={20} color="var(--accent-secondary)" />
-                </div>
-                <div style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--accent-secondary)' }}>{stats.deliveryWaiting} EN ATTENTE</div>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontWeight: '800', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>LIVRAISONS</p>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '900' }}>{stats.deliverySuccess} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>SUCCÈS</span></h2>
-         </div>
-
-         <div className="glass-panel hover-scale" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid #F43F5E' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(244, 63, 94, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Activity size={20} color="#F43F5E" />
-                </div>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontWeight: '800', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>DÉPENSES</p>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '900' }}>{stats.totalExpenses.toLocaleString()} F</h2>
-         </div>
+            <p className="stat-tile-value">{t.value}</p>
+            <p className="stat-tile-label">{t.label}</p>
+            {t.sub && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.sub}</p>}
+          </div>
+        ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
-         {/* Recent Activity */}
-         <section className="glass-panel" style={{ padding: '2.5rem', background: 'var(--bg-secondary)', borderRadius: '32px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h3 style={{ fontSize: '1.4rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                    <Clock size={22} color="var(--accent-primary)" /> Activité Récente
-                </h3>
-                <Link href="/history" style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    VOIR TOUT <ChevronRight size={14} />
+      {/* Main Content */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: '1.5rem' }}>
+
+        {/* Recent Orders */}
+        <section className="glass-panel" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <Clock size={17} color="var(--accent-primary)" /> Activité Récente
+            </h3>
+            <Link href="/admin" style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none' }}>
+              VOIR TOUT <ChevronRight size={12} />
+            </Link>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            {recentOrders.map(o => (
+              <div key={o.id} style={{ padding: '0.875rem 1rem', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
+                  <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: 'white', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {o.type === 'salle'
+                      ? <Monitor size={15} color="var(--accent-primary)" />
+                      : <Smartphone size={15} color="var(--accent-primary)" />}
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: '800', fontSize: '0.85rem' }}>
+                      {o.type === 'salle' ? `Table ${o.tablenumber}` : o.customername}
+                    </p>
+                    <p style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                      {new Date(o.created_at).toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                  <span className="badge" style={statusStyle(o.status)}>{o.status?.toUpperCase()}</span>
+                  <p style={{ fontWeight: '900', fontSize: '0.9rem' }}>{o.total.toLocaleString()} F</p>
+                </div>
+              </div>
+            ))}
+            {recentOrders.length === 0 && !loading && (
+              <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+                <ShoppingBag size={32} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
+                <p style={{ fontSize: '0.8rem' }}>Aucune commande pour l'instant</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Right panel */}
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* Performance card */}
+          <div style={{ padding: '1.5rem', background: 'linear-gradient(135deg, var(--accent-primary) 0%, #C2410C 100%)', borderRadius: '1.1rem', color: 'white', boxShadow: 'var(--shadow-glow)' }}>
+            <p style={{ fontSize: '0.65rem', fontWeight: '900', letterSpacing: '0.1em', opacity: 0.8, marginBottom: '0.3rem' }}>PERFORMANCE MENU</p>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '900', color: 'white', marginBottom: '1.1rem' }}>Plats les plus vendus</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {[
+                { name: 'Attiéké Poisson', sales: 42, pct: 100 },
+                { name: 'Kedjenou Poulet',  sales: 38, pct: 90  },
+                { name: 'Alloco Plantain',  sales: 31, pct: 74  },
+              ].map(item => (
+                <div key={item.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '700' }}>{item.name}</span>
+                    <span style={{ fontSize: '0.7rem', opacity: 0.85, fontWeight: '800' }}>{item.sales} ventes</span>
+                  </div>
+                  <div style={{ height: '4px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${item.pct}%`, background: 'white', borderRadius: '4px', opacity: 0.9 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Livraisons card */}
+          <div className="glass-panel" style={{ padding: '1.25rem' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.875rem' }}>ÉTAT DES LIVRAISONS</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              {[
+                { label: 'EN ATTENTE', value: stats.deliveryWaiting, color: 'var(--accent-danger)',  bg: 'rgba(239,68,68,0.06)' },
+                { label: 'SUCCÈS',     value: stats.deliverySuccess,  color: 'var(--accent-success)', bg: 'rgba(16,185,129,0.06)' },
+              ].map(s => (
+                <div key={s.label} style={{ textAlign: 'center', padding: '1rem 0.5rem', background: s.bg, borderRadius: '10px', border: `1px solid ${s.bg}` }}>
+                  <p style={{ fontSize: '1.6rem', fontWeight: '900', color: s.color, lineHeight: 1 }}>{s.value}</p>
+                  <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', fontWeight: '900', letterSpacing: '0.08em', marginTop: '0.2rem' }}>{s.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick access */}
+          <div className="glass-panel" style={{ padding: '1.25rem' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.875rem' }}>ACCÈS RAPIDE</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {[
+                { label: 'Vente en salle', path: '/pos', color: 'var(--accent-primary)' },
+                { label: 'Écran cuisine', path: '/kitchen', color: 'var(--accent-success)' },
+                { label: 'Gestion menu', path: '/admin?tab=menu', color: 'var(--accent-warning)' },
+              ].map(l => (
+                <Link key={l.path} href={l.path} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 0.875rem', background: 'var(--bg-secondary)', borderRadius: '10px', border: '1px solid var(--border-color)', textDecoration: 'none', transition: 'all 0.15s' }}>
+                  <span style={{ fontWeight: '700', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{l.label}</span>
+                  <ChevronRight size={14} color={l.color} />
                 </Link>
+              ))}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {recentOrders.map(o => (
-                    <div key={o.id} style={{ padding: '1.2rem', background: 'var(--bg-tertiary)', borderRadius: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', gap: '1.2rem', alignItems: 'center' }}>
-                            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {o.type === 'salle' ? <Monitor size={18} /> : <Smartphone size={18} />}
-                            </div>
-                            <div>
-                                <p style={{ fontWeight: '800', fontSize: '1rem' }}>{o.type === 'salle' ? `Table ${o.tablenumber}` : o.customername}</p>
-                                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{new Date(o.created_at).toLocaleTimeString()}</p>
-                            </div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                            <p style={{ fontWeight: '900', color: 'white' }}>{o.total.toLocaleString()} F</p>
-                            <p style={{ fontSize: '0.65rem', fontWeight: '900', color: 'var(--accent-success)' }}>{o.status.toUpperCase()}</p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-         </section>
-
-         {/* Quick Actions / Performance */}
-         <section style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div className="glass-panel" style={{ padding: '2.5rem', background: 'linear-gradient(135deg, var(--accent-primary) 0%, #4F46E5 100%)', borderRadius: '32px', color: 'white' }}>
-                <h3 style={{ fontSize: '1.5rem', fontWeight: '900', marginBottom: '1rem' }}>Performance Menu</h3>
-                <p style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '2rem' }}>Vos plats les plus vendus cette semaine.</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: '700' }}>Pizza Pepperoni</span>
-                        <span style={{ background: 'rgba(255,255,255,0.2)', padding: '0.2rem 0.6rem', borderRadius: '6px', fontSize: '0.7rem' }}>42 ventes</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: '700' }}>Attiéké Poisson</span>
-                        <span style={{ background: 'rgba(255,255,255,0.2)', padding: '0.2rem 0.6rem', borderRadius: '6px', fontSize: '0.7rem' }}>38 ventes</span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '2rem', background: 'var(--bg-secondary)', borderRadius: '24px' }}>
-                <h4 style={{ fontWeight: '800', marginBottom: '1.5rem' }}>État des Livreurs</h4>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                    <div style={{ flex: 1, textAlign: 'center' }}>
-                        <p style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--accent-primary)' }}>4</p>
-                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '800' }}>ACTIFS</p>
-                    </div>
-                    <div style={{ flex: 1, textAlign: 'center' }}>
-                        <p style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--accent-success)' }}>12</p>
-                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '800' }}>LIVRÉS</p>
-                    </div>
-                </div>
-            </div>
-         </section>
+          </div>
+        </section>
       </div>
-
-      {/* Security Admin Link (Hidden) */}
-      <button 
-        onClick={() => setShowPinModal(true)}
-        style={{ position: 'fixed', bottom: '2rem', right: '2rem', width: '48px', height: '48px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '50%', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-      >
-        <Settings size={20} />
-      </button>
-
-      {/* PIN Modal */}
-      {showPinModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="glass-panel" style={{ padding: '3rem', width: '380px', textAlign: 'center' }}>
-                <h3 style={{ marginBottom: '1rem' }}>Accès Administrateur</h3>
-                <input 
-                    type="password" 
-                    className="input-field" 
-                    style={{ textAlign: 'center', fontSize: '2rem', marginBottom: '2rem' }} 
-                    placeholder="PIN" 
-                    value={pin}
-                    onChange={e => setPin(e.target.value)}
-                />
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowPinModal(false)}>ANNULER</button>
-                    <button className="btn-primary" style={{ flex: 1 }} onClick={handleAdminAccess}>VALIDER</button>
-                </div>
-            </div>
-        </div>
-      )}
     </div>
+    </RoleGuard>
   );
 }

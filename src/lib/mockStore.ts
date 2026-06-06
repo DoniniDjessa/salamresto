@@ -2,8 +2,8 @@ import { Product, Order, User } from '../types';
 
 export const mockUsers: User[] = [
   { id: 'u1', name: 'Davy (Admin)', role: 'admin', baseSalary: 3000 },
-  { id: 'u2', name: 'Server Alice', role: 'server', pinCode: '1234' },
-  { id: 'u3', name: 'Chef Bob', role: 'cook' },
+  { id: 'u2', name: 'Server Alice', role: 'serveur', pinCode: '1234' },
+  { id: 'u3', name: 'Chef Bob', role: 'caisse' },
 ];
 
 export const mockProducts: Product[] = [
@@ -18,7 +18,7 @@ export let mockOrders: Order[] = [
   {
     id: 'o1',
     type: 'salle',
-    tableNumber: 4,
+    tablenumber: 4,
     items: [{ id: 'item1', productId: 'p1', quantity: 2 }, { id: 'item2', productId: 'p4', quantity: 2 }],
     status: 'en_attente',
     total: 32.00,
@@ -28,9 +28,9 @@ export let mockOrders: Order[] = [
   {
     id: 'o2',
     type: 'external',
-    customerName: 'Marc',
-    deliveryAddress: '15 Rue des Lilas',
-    contactPhone: '0600000000',
+    customername: 'Marc',
+    deliveryaddress: '15 Rue des Lilas',
+    contactphone: '0600000000',
     items: [{ id: 'item3', productId: 'p3', quantity: 1 }],
     status: 'en_preparation',
     total: 15.00,

@@ -1,11 +1,10 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Order } from '@/types';
 import { History, Search, Calendar, Filter, ChevronRight, CheckCircle, Smartphone, Monitor } from 'lucide-react';
 
 export default function OrderHistory() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 

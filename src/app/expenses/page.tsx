@@ -2,9 +2,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-
-type Period = 'today' | 'week' | 'month' | 'custom';
-
 import { CreditCard, Plus, Filter, Trash2, Calendar, TrendingDown } from 'lucide-react';
 
 type Period = 'today' | 'week' | 'month' | 'custom';

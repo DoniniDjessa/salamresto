@@ -1,235 +1,286 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Order, OrderStatus } from '@/types';
-import { Truck, MapPin, User, CheckCircle, Package, ArrowRight, Clock, Phone, Plus, X } from 'lucide-react';
+import { OrderStatus } from '@/types';
+import { Truck, MapPin, User, CheckCircle, Clock, Phone, X, CreditCard } from 'lucide-react';
+import RoleGuard from '@/components/RoleGuard';
+
+const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
+  en_livraison: { label: 'En livraison', cls: 'badge-warning' },
+  livre:        { label: 'Livrée',       cls: 'badge-success' },
+  paye:         { label: 'Payée',        cls: 'badge-neutral' },
+};
+
+const todayStart = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString(); };
 
 export default function LivraisonsDashboard() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newOrder, setNewOrder] = useState({
-    customername: '',
-    deliveryaddress: '',
-    total: '',
-    payment_method: 'cash'
-  });
+  const [active,      setActive]      = useState<any[]>([]);
+  const [todayAll,    setTodayAll]    = useState<any[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [payingOrder, setPayingOrder] = useState<any | null>(null);
+  const [payMethod,   setPayMethod]   = useState<'cash' | 'wave' | 'orange'>('cash');
+  const [payPhone,    setPayPhone]    = useState('');
+  const [payLoading,  setPayLoading]  = useState(false);
 
   useEffect(() => {
-    fetchOrders();
-    const channel = supabase.channel('resto-orders-livraisons')
+    fetchActive();
+    fetchTodayAll();
+    const ch = supabase.channel('resto-orders-livraisons')
       .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, () => {
-        fetchOrders();
+        fetchActive(); fetchTodayAll();
       })
       .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
-  async function fetchOrders() {
-    const { data } = await supabase
-      .from('resto-orders')
-      .select('*')
-      .eq('type', 'external')
-      .in('status', ['en_attente', 'en_preparation', 'pret', 'en_livraison', 'livre'])
-      .order('updated_at', { ascending: false });
-    
-    if (data) setOrders(data);
+  async function fetchActive() {
+    const { data } = await supabase.from('resto-orders').select('*')
+      .in('status', ['en_livraison', 'livre'])
+      .not('deliveryaddress', 'is', null)
+      .order('created_at', { ascending: true });
+    if (data) setActive(data.filter((o: any) => o.deliveryaddress));
     setLoading(false);
   }
 
-  const updateStatus = async (orderId: string, newStatus: OrderStatus) => {
-    const { error } = await supabase
-      .from('resto-orders')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', orderId);
-    
-    if (!error) fetchOrders();
+  async function fetchTodayAll() {
+    const { data } = await supabase.from('resto-orders').select('*')
+      .eq('type', 'external')
+      .not('deliveryaddress', 'is', null)
+      .gte('created_at', todayStart())
+      .order('created_at', { ascending: false });
+    if (data) setTodayAll(data.filter((o: any) => o.deliveryaddress));
+  }
+
+  const markDelivered = async (id: string) => {
+    await supabase.from('resto-orders').update({ status: 'livre' as OrderStatus }).eq('id', id);
+    fetchActive(); fetchTodayAll();
   };
 
-  const handleCreateOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const { error } = await supabase.from('resto-orders').insert([{
-      type: 'external',
-      customername: newOrder.customername,
-      deliveryaddress: newOrder.deliveryaddress,
-      total: parseFloat(newOrder.total),
-      payment_method: newOrder.payment_method,
-      status: 'en_attente',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      items: [] // Manual order usually starts empty or as a package
-    }]);
-
-    if (!error) {
-      setShowAddForm(false);
-      setNewOrder({ customername: '', deliveryaddress: '', total: '', payment_method: 'cash' });
-      fetchOrders();
-    } else {
-      alert("Erreur: " + error.message);
-    }
+  const cancelDelivery = async (id: string) => {
+    if (!confirm('Annuler cette livraison ? La commande retournera dans l\'onglet Externe.')) return;
+    await supabase.from('resto-orders').update({ status: 'pret' as OrderStatus }).eq('id', id);
+    fetchActive(); fetchTodayAll();
   };
+
+  const openPayForm = (o: any) => {
+    setPayingOrder(o);
+    setPayPhone(o.contactphone || '');
+    setPayMethod('cash');
+  };
+
+  const closePayForm = () => {
+    setPayingOrder(null);
+    setPayPhone('');
+    setPayMethod('cash');
+  };
+
+  const markPaid = async () => {
+    if (!payingOrder) return;
+    setPayLoading(true);
+    await supabase.from('resto-orders').update({
+      status: 'paye' as OrderStatus,
+      payment_method: payMethod,
+      ...(payPhone.trim() ? { contactphone: payPhone.trim() } : {}),
+    }).eq('id', payingOrder.id);
+    closePayForm();
+    setPayLoading(false);
+    fetchActive(); fetchTodayAll();
+  };
+
+  const todayPaidTotal = todayAll.filter(o => o.status === 'paye').reduce((a: number, o: any) => a + (o.total || 0), 0);
+
+  const thS: React.CSSProperties = { padding: '0.6rem 1rem', textAlign: 'left', fontWeight: '800', fontSize: '0.62rem', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', whiteSpace: 'nowrap' };
+  const tdS: React.CSSProperties = { padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem', verticalAlign: 'middle' };
+
+  const PAY_METHODS: { key: 'cash' | 'wave' | 'orange'; label: string }[] = [
+    { key: 'cash',   label: 'Espèces' },
+    { key: 'wave',   label: 'Wave'    },
+    { key: 'orange', label: 'Orange'  },
+  ];
 
   return (
-    <div style={{ padding: '2.5rem', background: 'var(--bg-primary)', minHeight: '100vh' }} className="animate-fade-in">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
-         <div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <Truck size={32} color="var(--accent-primary)" /> Livraisons <span style={{ color: 'var(--accent-primary)' }}>& Logistique</span>
-            </h1>
-            <p style={{ color: 'var(--text-secondary)' }}>Suivez vos livreurs et gérez vos expéditions</p>
-         </div>
-         <div style={{ display: 'flex', gap: '1.5rem' }}>
-            <button 
-              onClick={() => setShowAddForm(true)}
-              className="btn-primary hover-scale" 
-              style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderRadius: '12px' }}
-            >
-                <Plus size={20} /> NOUVELLE LIVRAISON
-            </button>
-         </div>
+    <RoleGuard allowedRoles={['superAdmin', 'admin', 'manager', 'caisse', 'serveur', 'livreur']}>
+    <div className="page-wrap animate-fade-in">
+
+      {/* Header */}
+      <header className="page-header">
+        <div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <Truck size={26} color="var(--accent-primary)" /> Livraisons
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Livraisons en cours · {active.length} en route</p>
+        </div>
+        <div style={{ textAlign: 'center', padding: '0.75rem 1.25rem', background: 'rgba(245,158,11,0.08)', borderRadius: '12px', border: '1px solid rgba(245,158,11,0.2)' }}>
+          <p style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--accent-warning)' }}>{active.length}</p>
+          <p style={{ fontSize: '0.6rem', fontWeight: '900', color: 'var(--accent-warning)', letterSpacing: '0.08em' }}>EN ROUTE</p>
+        </div>
       </header>
 
-      {/* Add Order Modal Overlay */}
-      {showAddForm && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="glass-panel" style={{ padding: '2.5rem', width: '500px', background: 'var(--bg-secondary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: '900' }}>Créer une Livraison</h2>
-              <button onClick={() => setShowAddForm(false)} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}><X size={24} /></button>
-            </div>
-            <form onSubmit={handleCreateOrder} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>NOM DU CLIENT</label>
-                <input required value={newOrder.customername} onChange={e => setNewOrder({...newOrder, customername: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>ADRESSE DE LIVRAISON</label>
-                <input required value={newOrder.deliveryaddress} onChange={e => setNewOrder({...newOrder, deliveryaddress: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }} />
-              </div>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>MONTANT TOTAL</label>
-                  <input required type="number" value={newOrder.total} onChange={e => setNewOrder({...newOrder, total: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>PAIEMENT</label>
-                  <select value={newOrder.payment_method} onChange={e => setNewOrder({...newOrder, payment_method: e.target.value})} style={{ width: '100%', padding: '1rem', background: 'var(--bg-tertiary)', border: 'none', borderRadius: '12px', color: 'white' }}>
-                    <option value="cash">Espèces</option>
-                    <option value="online">Payé (Lien/Carte)</option>
-                  </select>
-                </div>
-              </div>
-              <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1.2rem', fontWeight: '800' }}>ENREGISTRER LA LIVRAISON</button>
-            </form>
+      {/* Active deliveries */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
+        {loading ? (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Chargement…</div>
+        ) : active.length === 0 ? (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', background: 'rgba(245,158,11,0.05)', borderRadius: '16px', border: '1px dashed rgba(245,158,11,0.25)' }}>
+            <Truck size={32} style={{ opacity: 0.3, marginBottom: '0.75rem', display: 'block', margin: '0 auto 0.75rem' }} />
+            <p style={{ fontWeight: '700', fontSize: '0.85rem' }}>Aucune livraison en cours</p>
+            <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Les livraisons apparaissent ici depuis l'onglet Externe</p>
           </div>
-        </div>
-      )}
+        ) : (
+          active.map(o => {
+            const isPaying = payingOrder?.id === o.id;
+            return (
+              <div key={o.id} style={{ background: 'white', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '1.25rem', boxShadow: 'var(--shadow-sm)', borderTop: `3px solid ${o.status === 'livre' ? 'var(--accent-success)' : 'var(--accent-warning)'}` }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+                  <p style={{ fontWeight: '900', fontSize: '0.9rem' }}>#{o.id.slice(0,5).toUpperCase()}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Clock size={11} color="var(--text-muted)" />
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '700' }}>
+                      {new Date(o.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem' }}>
-        {/* Prêt par la cuisine */}
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0 0.5rem' }}>
-            <Package size={18} color="var(--accent-primary)" />
-            <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>PRÊTS POUR DÉPART</h2>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-            {orders.filter(o => o.status === 'pret' || o.status === 'en_attente').map(o => (
-              <div key={o.id} className="glass-panel hover-scale" style={{ padding: '1.8rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-primary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: '900' }}>#{o.id.slice(0, 4).toUpperCase()}</h3>
-                    <div style={{ padding: '0.4rem 0.8rem', background: o.payment_method === 'online' ? 'var(--accent-success)' : 'var(--accent-warning)', borderRadius: '10px', fontSize: '0.65rem', fontWeight: '900', color: 'white' }}>
-                        {o.payment_method === 'online' ? 'PAYÉ' : 'À PAYER'}
+                {/* Client info */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.875rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <User size={13} color="var(--text-secondary)" />
+                    <span style={{ fontWeight: '800', fontSize: '0.875rem' }}>{o.customername || '—'}</span>
+                  </div>
+                  {o.contactphone && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Phone size={12} color="var(--text-secondary)" />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{o.contactphone}</span>
                     </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
+                    <MapPin size={12} color="var(--text-secondary)" style={{ marginTop: '0.1rem', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{o.deliveryaddress}</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.8rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <User size={14} color="var(--text-secondary)" />
-                        </div>
-                        <span style={{ fontWeight: '800', fontSize: '0.95rem' }}>{o.customername}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <MapPin size={14} color="var(--text-secondary)" />
-                        </div>
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{o.deliveryaddress}</span>
-                    </div>
-                </div>
-                <button 
-                  className="hover-scale" 
-                  style={{ width: '100%', padding: '1.2rem', borderRadius: '16px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.8rem', boxShadow: 'var(--shadow-glow)' }} 
-                  onClick={() => updateStatus(o.id, 'en_livraison')}
-                >
-                  DÉMARRER COURSE <ArrowRight size={18} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
 
-        {/* En Cours */}
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0 0.5rem' }}>
-            <Truck size={18} color="var(--accent-secondary)" />
-            <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>EN ROUTE</h2>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-            {orders.filter(o => o.status === 'en_livraison').map(o => (
-              <div key={o.id} className="glass-panel hover-scale" style={{ padding: '1.8rem', background: 'var(--bg-secondary)', borderRadius: '28px', borderLeft: '4px solid var(--accent-secondary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: '900' }}>{o.customername}</h3>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-secondary)' }}>
-                        <Clock size={14} />
-                        <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>En cours...</span>
-                    </div>
-                </div>
-                <p style={{ fontSize: '1.5rem', fontWeight: '900', color: 'white', marginBottom: '1.2rem' }}>{o.total?.toLocaleString()} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>F</span></p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
-                    <MapPin size={14} /> {o.deliveryaddress}
-                </div>
-                <div style={{ display: 'flex', gap: '0.8rem' }}>
-                    <button style={{ flex: 1, padding: '1rem', borderRadius: '12px', background: 'var(--bg-tertiary)', border: 'none', color: 'white', cursor: 'pointer' }}><Phone size={18} /></button>
-                    <button 
-                        className="hover-scale" 
-                        style={{ flex: 3, padding: '1rem', borderRadius: '12px', background: 'var(--accent-success)', color: 'white', border: 'none', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} 
-                        onClick={() => updateStatus(o.id, 'livre')}
-                    >
-                        <CheckCircle size={18} /> TERMINER
+                <p style={{ fontSize: '1.1rem', fontWeight: '900', marginBottom: '0.875rem' }}>{(o.total || 0).toLocaleString()} F</p>
+
+                {/* Actions */}
+                {o.status === 'en_livraison' ? (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button onClick={() => markDelivered(o.id)}
+                      style={{ flex: 1, padding: '0.75rem', borderRadius: '10px', background: 'var(--accent-success)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16,185,129,0.22)' }}>
+                      <CheckCircle size={15} /> LIVRÉ
                     </button>
-                </div>
+                    <button onClick={() => cancelDelivery(o.id)}
+                      style={{ padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(239,68,68,0.07)', color: 'var(--accent-danger)', border: '1px solid rgba(239,68,68,0.18)', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <X size={14} /> Annuler
+                    </button>
+                  </div>
+                ) : isPaying ? (
+                  /* Inline payment form */
+                  <div style={{ background: 'var(--bg-secondary)', borderRadius: '12px', padding: '0.875rem', border: '1px solid var(--border-color)' }}>
+                    <p style={{ fontSize: '0.65rem', fontWeight: '900', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>MODE DE PAIEMENT</p>
+                    <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem' }}>
+                      {PAY_METHODS.map(m => (
+                        <button key={m.key} onClick={() => setPayMethod(m.key)}
+                          style={{ flex: 1, padding: '0.45rem 0.25rem', borderRadius: '8px', border: `2px solid ${payMethod === m.key ? 'var(--accent-primary)' : 'var(--border-color)'}`, background: payMethod === m.key ? 'rgba(249,115,22,0.08)' : 'transparent', color: payMethod === m.key ? 'var(--accent-primary)' : 'var(--text-muted)', fontWeight: '800', fontSize: '0.7rem', cursor: 'pointer' }}>
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                    <input type="tel" placeholder="N° téléphone (optionnel)" value={payPhone}
+                      onChange={e => setPayPhone(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem', marginBottom: '0.6rem', boxSizing: 'border-box', outline: 'none' }} />
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button onClick={markPaid} disabled={payLoading}
+                        style={{ flex: 1, padding: '0.65rem', borderRadius: '9px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.78rem', cursor: 'pointer', boxShadow: 'var(--shadow-glow)' }}>
+                        {payLoading ? '…' : 'CONFIRMER ✓'}
+                      </button>
+                      <button onClick={closePayForm}
+                        style={{ padding: '0.65rem 0.875rem', borderRadius: '9px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontWeight: '700', fontSize: '0.78rem', cursor: 'pointer' }}>
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* livre: show PAYER button */
+                  <button onClick={() => openPayForm(o)}
+                    style={{ width: '100%', padding: '0.7rem', borderRadius: '10px', background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: '800', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', boxShadow: 'var(--shadow-glow)' }}>
+                    <CreditCard size={15} /> ENCAISSER
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
-        </section>
+            );
+          })
+        )}
+      </div>
 
-        {/* Historique du jour */}
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0 0.5rem' }}>
-            <CheckCircle size={18} color="var(--accent-success)" />
-            <h2 style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>SUCCÈS (JOUR)</h2>
+      {/* Table du jour */}
+      <div className="glass-panel" style={{ overflow: 'hidden' }}>
+        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={{ fontWeight: '800', fontSize: '0.9rem' }}>
+            Livraisons du jour
+            <span style={{ marginLeft: '0.5rem', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', padding: '0.1rem 0.5rem', borderRadius: '100px', fontSize: '0.7rem', fontWeight: '700' }}>
+              {todayAll.length}
+            </span>
+          </p>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            Encaissé: <strong style={{ color: 'var(--accent-success)' }}>{todayPaidTotal.toLocaleString()} F</strong>
+          </span>
+        </div>
+        {todayAll.length === 0 ? (
+          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            Aucune livraison aujourd'hui
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-            {orders.filter(o => o.status === 'livre').map(o => (
-              <div key={o.id} className="glass-panel" style={{ padding: '1.2rem', background: 'var(--bg-secondary)', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.8 }}>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <CheckCircle size={16} color="var(--accent-success)" />
-                    </div>
-                    <div>
-                        <p style={{ fontWeight: '800', fontSize: '0.9rem' }}>{o.customername}</p>
-                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>#{o.id.slice(0, 4).toUpperCase()}</p>
-                    </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontWeight: '900', color: 'var(--accent-success)' }}>{o.total?.toLocaleString()} F</p>
-                    <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{new Date(o.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                </div>
-              </div>
-            ))}
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thS}>Heure</th>
+                  <th style={thS}>Client</th>
+                  <th style={thS}>Adresse</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Total</th>
+                  <th style={thS}>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayAll.map((o, idx) => {
+                  const meta = STATUS_LABEL[o.status] || { label: o.status, cls: 'badge-neutral' };
+                  const isPaid = o.status === 'paye';
+                  return (
+                    <tr key={o.id}
+                      style={{ background: idx % 2 === 0 ? 'white' : 'var(--bg-secondary)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(249,115,22,0.04)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = idx % 2 === 0 ? 'white' : 'var(--bg-secondary)')}
+                    >
+                      <td style={tdS}>
+                        <span style={{ fontWeight: '700', fontSize: '0.78rem' }}>
+                          {new Date(o.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </td>
+                      <td style={tdS}>
+                        <p style={{ fontWeight: '800', fontSize: '0.82rem' }}>{o.customername || '—'}</p>
+                        {o.contactphone && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{o.contactphone}</p>}
+                      </td>
+                      <td style={{ ...tdS, maxWidth: '200px' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {o.deliveryaddress}
+                        </span>
+                      </td>
+                      <td style={{ ...tdS, textAlign: 'right', fontWeight: '900', color: isPaid ? 'var(--accent-success)' : 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                        {(o.total || 0).toLocaleString()} F
+                      </td>
+                      <td style={tdS}>
+                        <span className={`badge ${meta.cls}`}>{meta.label}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </section>
+        )}
       </div>
     </div>
+    </RoleGuard>
   );
 }
