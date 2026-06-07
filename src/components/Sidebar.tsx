@@ -120,7 +120,7 @@ function SidebarContent() {
         </button>
       )}
 
-      <div style={{
+      <div suppressHydrationWarning style={{
         width: isExpanded ? 'var(--sidebar-width-expanded)' : 'var(--sidebar-width-collapsed)',
         height: '100vh',
         position: 'fixed',
@@ -129,7 +129,6 @@ function SidebarContent() {
         borderRight: '1px solid rgba(255,255,255,0.06)',
         display: 'flex',
         flexDirection: 'column',
-        /* On mobile: slide fully off-screen when closed, full-width when open */
         transform: isMobile && !isExpanded ? 'translateX(-100%)' : 'translateX(0)',
         transition: 'transform 0.28s ease, width 0.28s ease',
         overflow: 'hidden',

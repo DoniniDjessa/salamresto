@@ -2,8 +2,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { OrderStatus } from '@/types';
-import { Truck, MapPin, User, CheckCircle, Clock, Phone, X, CreditCard } from 'lucide-react';
+import { Truck, MapPin, User, CheckCircle, Clock, Phone, X, CreditCard, Printer } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
+import ModalPortal from '@/components/ModalPortal';
+import ReceiptModal, { type ReceiptOrder } from '@/components/ReceiptModal';
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   en_livraison: { label: 'En livraison', cls: 'badge-warning' },
@@ -21,6 +23,7 @@ export default function LivraisonsDashboard() {
   const [payMethod,   setPayMethod]   = useState<'cash' | 'wave' | 'orange'>('cash');
   const [payPhone,    setPayPhone]    = useState('');
   const [payLoading,  setPayLoading]  = useState(false);
+  const [receiptOrder, setReceiptOrder] = useState<ReceiptOrder | null>(null);
 
   useEffect(() => {
     fetchActive();
@@ -160,7 +163,13 @@ export default function LivraisonsDashboard() {
                   </div>
                 </div>
 
-                <p style={{ fontSize: '1.1rem', fontWeight: '900', marginBottom: '0.875rem' }}>{(o.total || 0).toLocaleString()} F</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+                  <p style={{ fontSize: '1.1rem', fontWeight: '900' }}>{(o.total || 0).toLocaleString()} F</p>
+                  <button onClick={() => setReceiptOrder(o)} title="Imprimer le reçu"
+                    style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>
+                    <Printer size={14} />
+                  </button>
+                </div>
 
                 {/* Actions */}
                 {o.status === 'en_livraison' ? (
@@ -280,6 +289,12 @@ export default function LivraisonsDashboard() {
           </div>
         )}
       </div>
+
+      <ModalPortal>
+        {receiptOrder && (
+          <ReceiptModal order={receiptOrder} onClose={() => setReceiptOrder(null)} />
+        )}
+      </ModalPortal>
     </div>
     </RoleGuard>
   );

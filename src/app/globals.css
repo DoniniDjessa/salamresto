@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
 
 /* ─── Responsive Root Font Size ─────────────────────────── */
-html { font-size: 16px; }
+html { font-size: 16px; overflow-x: hidden; }
 
 @media (max-width: 1399px) { html { font-size: 14px; } }
 @media (max-width: 1099px) { html { font-size: 13px; } }
@@ -52,7 +52,6 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
-  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -309,3 +308,18 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-track { background: var(--bg-secondary); }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.10); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.20); }
+
+/* ─── Receipt Print ──────────────────────────────────────── */
+@media print {
+  body * { visibility: hidden; }
+  #receipt-content,
+  #receipt-content * { visibility: visible; }
+  #receipt-content {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+  }
+}

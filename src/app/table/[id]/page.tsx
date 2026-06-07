@@ -18,7 +18,7 @@ export default function TableOrderPage() {
 
   async function fetchProducts() {
     const { data } = await supabase.from('resto-products').select('*');
-    if (data) setProducts(data);
+    if (data) setProducts(data.filter((p: any) => p.available !== false));
     setLoading(false);
   }
 

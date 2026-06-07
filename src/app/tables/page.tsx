@@ -2,13 +2,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Product, ProductVariant, OrderStatus } from '@/types';
-import { LayoutGrid, Plus, X, Send, ChevronRight, CreditCard, ShoppingBag, Search, Truck, MapPin, CheckCircle2, Clock, Flame } from 'lucide-react';
+import { LayoutGrid, Plus, X, Send, ChevronRight, CreditCard, ShoppingBag, Search, Truck, MapPin, CheckCircle2, Clock, Flame, Printer } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
+import ModalPortal from '@/components/ModalPortal';
+import ReceiptModal, { type ReceiptOrder } from '@/components/ReceiptModal';
 
 const TABLES_KEY = 'salamresto-tables-count';
 const CAVE_CATS_TABLE = new Set(['boissons', 'cave', 'thé/café', 'the/cafe']);
 
-interface CartItem { id: string; name: string; price: number; quantity: number; }
+interface CartItem { id: string; name: string; price: number; quantity: number; category?: string; }
 
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0,
@@ -127,19 +129,33 @@ function OrderModal({
   const [customPriceProd,  setCustomPriceProd]  = useState<Product | null>(null);
   const [customPrice,      setCustomPrice]      = useState('');
 
-  const addToCart = (id: string, name: string, price: number) =>
+  const addToCart = (id: string, name: string, price: number, category?: string) =>
     setNoteCart(prev => {
       const ex = prev.find(i => i.id === id);
       if (ex) return prev.map(i => i.id === id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { id, name, price, quantity: 1 }];
+      return [...prev, { id, name, price, quantity: 1, category }];
     });
+
+  const decrementCart = (id: string) =>
+    setNoteCart(prev => {
+      const ex = prev.find(i => i.id === id);
+      if (!ex) return prev;
+      if (ex.quantity <= 1) return prev.filter(i => i.id !== id);
+      return prev.map(i => i.id === id ? { ...i, quantity: i.quantity - 1 } : i);
+    });
+
+  // Total qty for a product across all its variants in the cart
+  const cartQtyFor = (productId: string) =>
+    noteCart
+      .filter(i => i.id === productId || i.id.startsWith(`${productId}__`))
+      .reduce((sum, i) => sum + i.quantity, 0);
 
   const handleProductClick = (p: Product) => {
     if (p.variants?.length)     { setVariantProd(p); return; }
     if (p.options?.length)      { setOptionProd(p);  return; }
     // No children and price not set → ask for manual price
     if (!p.price || p.price === 0) { setCustomPriceProd(p); setCustomPrice(''); return; }
-    addToCart(p.id, p.name, p.price);
+    addToCart(p.id, p.name, p.price, p.category);
   };
 
   const [menuSearch, setMenuSearch] = useState('');
@@ -154,7 +170,7 @@ function OrderModal({
   });
 
   return (
-    <>
+    <ModalPortal>
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.25rem' }}>
         <div style={{ background: 'white', borderRadius: '24px', width: '100%', maxWidth: '960px', height: '82vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
           <div style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
@@ -186,11 +202,14 @@ function OrderModal({
                 ))}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(115px, 1fr))', gap: '0.75rem' }}>
-                {shown.map(p => (
+                {shown.map(p => {
+                  const qty = cartQtyFor(p.id);
+                  const isSimple = !p.variants?.length && !p.options?.length && (p.price || 0) > 0;
+                  return (
                   <div key={p.id} onClick={() => handleProductClick(p)}
-                    style={{ padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', textAlign: 'center', background: 'white', transition: 'all 0.15s' }}
+                    style={{ padding: '0.75rem', border: `1.5px solid ${qty > 0 ? 'var(--accent-primary)' : 'var(--border-color)'}`, borderRadius: '12px', cursor: 'pointer', textAlign: 'center', background: qty > 0 ? 'rgba(249,115,22,0.03)' : 'white', transition: 'all 0.15s', position: 'relative' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent-primary)'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-color)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = qty > 0 ? 'var(--accent-primary)' : 'var(--border-color)'; }}
                   >
                     <div style={{ background: p.image ? `url(${p.image}) center/cover` : 'var(--bg-secondary)', height: '60px', borderRadius: '8px', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', overflow: 'hidden' }}>
                       {!p.image && '🥘'}
@@ -211,8 +230,32 @@ function OrderModal({
                       }
                       return <p style={{ fontSize: '0.75rem', fontWeight: '900', color: 'var(--accent-primary)' }}>{p.price.toLocaleString()} F</p>;
                     })()}
+
+                    {/* ── qty controls ── */}
+                    {isSimple ? (
+                      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', marginTop: '0.45rem' }}>
+                        <button
+                          onClick={e => { e.stopPropagation(); decrementCart(p.id); }}
+                          style={{ width: '22px', height: '22px', borderRadius: '6px', background: qty > 0 ? 'rgba(239,68,68,0.1)' : 'var(--bg-secondary)', border: `1px solid ${qty > 0 ? 'rgba(239,68,68,0.25)' : 'var(--border-color)'}`, color: qty > 0 ? 'var(--accent-danger)' : 'var(--text-muted)', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', lineHeight: 1, padding: 0 }}>
+                          −
+                        </button>
+                        <span style={{ fontWeight: '900', fontSize: '0.8rem', color: qty > 0 ? 'var(--accent-primary)' : 'var(--text-muted)', minWidth: '1.2rem', textAlign: 'center' }}>
+                          {qty}
+                        </span>
+                        <button
+                          onClick={e => { e.stopPropagation(); addToCart(p.id, p.name, p.price, p.category); }}
+                          style={{ width: '22px', height: '22px', borderRadius: '6px', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.25)', color: 'var(--accent-primary)', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', lineHeight: 1, padding: 0 }}>
+                          +
+                        </button>
+                      </div>
+                    ) : qty > 0 ? (
+                      <div style={{ marginTop: '0.4rem', display: 'flex', justifyContent: 'center' }}>
+                        <span style={{ background: 'var(--accent-primary)', color: 'white', padding: '0.05rem 0.5rem', borderRadius: '100px', fontSize: '0.6rem', fontWeight: '900' }}>{qty}</span>
+                      </div>
+                    ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
             {/* Cart */}
@@ -220,12 +263,22 @@ function OrderModal({
               <p style={{ fontSize: '0.6rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '0.875rem' }}>ARTICLES</p>
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {noteCart.map(item => (
-                  <div key={item.id} style={{ padding: '0.55rem 0.75rem', background: 'var(--bg-secondary)', borderRadius: '9px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                  <div key={item.id} style={{ padding: '0.5rem 0.65rem', background: 'var(--bg-secondary)', borderRadius: '9px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontWeight: '800', fontSize: '0.7rem', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.quantity}× {item.name}</p>
+                      <p style={{ fontWeight: '800', fontSize: '0.7rem', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
                       <p style={{ color: 'var(--accent-primary)', fontSize: '0.62rem', fontWeight: '900' }}>{(item.price * item.quantity).toLocaleString()} F</p>
                     </div>
-                    <button onClick={() => setNoteCart(c => c.filter(i => i.id !== item.id))} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0 }}><X size={13}/></button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexShrink: 0 }}>
+                      <button onClick={() => decrementCart(item.id)}
+                        style={{ width: '22px', height: '22px', borderRadius: '6px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-danger)', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', lineHeight: 1, padding: 0 }}>
+                        −
+                      </button>
+                      <span style={{ fontWeight: '900', fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '1.1rem', textAlign: 'center' }}>{item.quantity}</span>
+                      <button onClick={() => addToCart(item.id, item.name, item.price, item.category)}
+                        style={{ width: '22px', height: '22px', borderRadius: '6px', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.25)', color: 'var(--accent-primary)', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', lineHeight: 1, padding: 0 }}>
+                        +
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {!noteCart.length && <div style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>Sélectionnez des plats</div>}
@@ -260,7 +313,7 @@ function OrderModal({
               onChange={e => setCustomPrice(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && parseFloat(customPrice) > 0) {
-                  addToCart(customPriceProd.id, customPriceProd.name, parseFloat(customPrice));
+                  addToCart(customPriceProd.id, customPriceProd.name, parseFloat(customPrice), customPriceProd.category);
                   setCustomPriceProd(null); setCustomPrice('');
                 }
               }}
@@ -272,7 +325,7 @@ function OrderModal({
               onClick={() => {
                 const price = parseFloat(customPrice);
                 if (!price || price <= 0) return;
-                addToCart(customPriceProd.id, customPriceProd.name, price);
+                addToCart(customPriceProd.id, customPriceProd.name, price, customPriceProd.category);
                 setCustomPriceProd(null); setCustomPrice('');
               }}
               disabled={!customPrice || parseFloat(customPrice) <= 0}
@@ -288,24 +341,51 @@ function OrderModal({
       {variantProd && (
         <VariantModal product={variantProd} onClose={() => setVariantProd(null)} onSelect={v => {
           if (v.options?.length) { setPendingVar({ product: variantProd, variant: v }); setVariantProd(null); }
-          else { addToCart(`${variantProd.id}__${v.id}`, `${variantProd.name} — ${v.name}`, v.price ?? variantProd.price); setVariantProd(null); }
+          else { addToCart(`${variantProd.id}__${v.id}`, `${variantProd.name} — ${v.name}`, v.price ?? variantProd.price, variantProd.category); setVariantProd(null); }
         }} />
       )}
       {pendingVar && (
         <DeclModal product={pendingVar.product} variant={pendingVar.variant} onClose={() => setPendingVar(null)} onSelect={(name, price) => {
           const { product: p, variant: v } = pendingVar;
-          addToCart(`${p.id}__${v.id}__${name}`, `${p.name} — ${v.name}${name ? ` (${name})` : ''}`, price);
+          addToCart(`${p.id}__${v.id}__${name}`, `${p.name} — ${v.name}${name ? ` (${name})` : ''}`, price, p.category);
           setPendingVar(null);
         }} />
       )}
       {optionProd && (
         <SimpleOptModal product={optionProd} onClose={() => setOptionProd(null)} onSelect={(name, price) => {
-          addToCart(`${optionProd.id}__${name}`, `${optionProd.name}${name ? ` (${name})` : ''}`, price);
+          addToCart(`${optionProd.id}__${name}`, `${optionProd.name}${name ? ` (${name})` : ''}`, price, optionProd.category);
           setOptionProd(null);
         }} />
       )}
-    </>
+    </ModalPortal>
   );
+}
+
+/* ── Build a combined receipt from all orders of one table session ── */
+function buildTableReceipt(tableOrders: any[], sessionId?: string | null): import('@/components/ReceiptModal').ReceiptOrder {
+  const itemMap = new Map<string, any>();
+  tableOrders.forEach(o =>
+    (o.items || []).forEach((it: any) => {
+      const k = it.name;
+      if (itemMap.has(k)) itemMap.get(k).quantity += (it.quantity || 1);
+      else itemMap.set(k, { ...it });
+    })
+  );
+  const base = tableOrders[0] || {};
+  const sid  = sessionId || tableOrders.find(o => o.session_id)?.session_id || null;
+  return {
+    id:             sid || base.id,
+    session_id:     sid,
+    type:           'salle',
+    tablenumber:    base.tablenumber,
+    customername:   base.customername  ?? null,
+    deliveryaddress:null,
+    contactphone:   null,
+    items:          Array.from(itemMap.values()),
+    total:          tableOrders.reduce((s, o) => s + (o.total || 0), 0),
+    created_at:     base.created_at,
+    payment_method: tableOrders.find(o => o.payment_method)?.payment_method ?? null,
+  };
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -350,8 +430,24 @@ export default function TablesPage() {
   const [extHistory,   setExtHistory]   = useState<any[]>([]);
   const [showPayModal, setShowPayModal] = useState(false);
   const [payOrder,     setPayOrder]     = useState<any | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<ReceiptOrder | null>(null);
   const [payMethod,    setPayMethod]    = useState<'cash' | 'wave' | 'orange' | null>(null);
   const [payPhone,     setPayPhone]     = useState('');
+
+  // tableNumber → active session_id (cleared when table is vided)
+  const [tableSessions, setTableSessions] = useState<Record<number, string>>({});
+
+  // Rebuild sessions from open orders whenever orders refresh
+  useEffect(() => {
+    const sessions: Record<number, string> = {};
+    orders.forEach(o => {
+      if (o.type === 'salle' && o.tablenumber != null && o.session_id &&
+          !['paye'].includes(o.status)) {
+        if (!sessions[o.tablenumber]) sessions[o.tablenumber] = o.session_id;
+      }
+    });
+    setTableSessions(sessions);
+  }, [orders]);
 
   useEffect(() => {
     fetchOrders();
@@ -390,13 +486,16 @@ export default function TablesPage() {
   async function loadProducts() {
     if (menuProducts.length) return;
     const { data } = await supabase.from('resto-products').select('*');
-    if (data) setMenuProducts(data);
+    if (data) setMenuProducts(data.filter((p: any) => p.available !== false));
   }
 
   // ── Salle order submit — auto-splits cave items from food items ──
   async function submitSalleOrder(cart: CartItem[]) {
     if (!openTable) return;
     setSubmitting(true);
+
+    // Reuse existing session for this table, or generate a new one
+    const sessionId: string = tableSessions[openTable] ?? crypto.randomUUID();
 
     const caveItems = cart.filter(isCaveItem);
     const foodItems = cart.filter(i => !isCaveItem(i));
@@ -426,13 +525,19 @@ export default function TablesPage() {
         });
         await supabase.from('resto-orders').update({ items: merged, total: match.total + total }).eq('id', match.id);
       } else {
-        await supabase.from('resto-orders').insert([{ type: 'salle', tablenumber: openTable, items, status: 'en_attente', total, created_at: now }]);
+        await supabase.from('resto-orders').insert([{
+          type: 'salle', tablenumber: openTable, items,
+          status: 'en_attente', total, created_at: now,
+          session_id: sessionId,
+        }]);
       }
     };
 
     await processSubCart(foodItems, false);
     await processSubCart(caveItems, true);
 
+    // Persist the session ID in state so subsequent orders reuse it
+    setTableSessions(prev => ({ ...prev, [openTable]: sessionId }));
     setSubmitting(false);
     setOpenTable(null);
     fetchOrders();
@@ -475,6 +580,8 @@ export default function TablesPage() {
     const tableOrderIds = orders.filter(o => o.tablenumber === tableNum).map(o => o.id);
     if (!tableOrderIds.length) return;
     await supabase.from('resto-orders').update({ status: 'paye' as OrderStatus }).in('id', tableOrderIds);
+    // End the session — next client at this table gets a fresh session_id
+    setTableSessions(prev => { const n = { ...prev }; delete n[tableNum]; return n; });
     fetchOrders();
   }
 
@@ -635,7 +742,17 @@ export default function TablesPage() {
                     <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: isOccupied?'rgba(245,158,11,0.10)':'rgba(16,185,129,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <LayoutGrid size={16} color={isOccupied?'var(--accent-warning)':'var(--accent-success)'} />
                     </div>
-                    <h3 style={{ fontSize: '0.95rem', fontWeight: '900' }}>Table {t.id}</h3>
+                    <div>
+                      <h3 style={{ fontSize: '0.95rem', fontWeight: '900' }}>Table {t.id}</h3>
+                      {isOccupied && (() => {
+                        const sid = tableSessions[t.id] || tableOrders.find(o => o.session_id)?.session_id;
+                        return sid ? (
+                          <p style={{ fontSize: '0.55rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-muted)', letterSpacing: '0.04em', margin: 0 }}>
+                            #{sid.slice(0, 6).toUpperCase()}
+                          </p>
+                        ) : null;
+                      })()}
+                    </div>
                     {isOccupied && (
                       <span style={{ background: 'rgba(249,115,22,0.10)', color: 'var(--accent-primary)', border: '1px solid rgba(249,115,22,0.20)', padding: '0.12rem 0.55rem', borderRadius: '6px', fontSize: '0.65rem', fontWeight: '900' }}>
                         {tableTotal.toLocaleString()} F
@@ -700,6 +817,11 @@ export default function TablesPage() {
                       <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem', marginTop: '0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                         <p style={{ fontSize: '1rem', fontWeight: '900' }}>{tableTotal.toLocaleString()} F</p>
                         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                          {/* Print button — combines food + drinks into one receipt */}
+                          <button onClick={() => setReceiptOrder(buildTableReceipt(tableOrders, tableSessions[t.id]))} title="Imprimer le reçu"
+                            style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>
+                            <Printer size={13} />
+                          </button>
                           {isSettled ? (
                             <span style={{ fontSize: '0.68rem', color: 'var(--accent-success)', fontWeight: '800' }}>Règlement OK ✓</span>
                           ) : isReady ? (
@@ -800,6 +922,11 @@ export default function TablesPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <p style={{ fontWeight: '900', fontSize: '1rem' }}>{o.total?.toLocaleString()} F</p>
                       <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                        {/* Print receipt */}
+                        <button onClick={() => setReceiptOrder(o)} title="Imprimer le reçu"
+                          style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                          <Printer size={15} />
+                        </button>
                         {/* Truck button — only when not yet dispatched */}
                         {!isLivre && !isSettled && (
                           <button title="Ajouter / modifier livraison" onClick={() => openDeliveryModal(o)}
@@ -937,6 +1064,8 @@ export default function TablesPage() {
         )}
         </>
       )}
+
+      <ModalPortal>
 
       {/* ── Order modals ── */}
       {openTable !== null && (
@@ -1135,6 +1264,13 @@ export default function TablesPage() {
           </div>
         </div>
       )}
+
+      {/* ── Receipt modal ── */}
+      {receiptOrder && (
+        <ReceiptModal order={receiptOrder} onClose={() => setReceiptOrder(null)} />
+      )}
+
+      </ModalPortal>
     </div>
     </RoleGuard>
   );

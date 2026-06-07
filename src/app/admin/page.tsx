@@ -5,12 +5,14 @@ import { supabase } from '@/lib/supabase';
 import { Product, User, ProductVariant, ProductSizeOption } from '@/types';
 import {
   Activity, Users, Utensils, Wallet, PieChart,
-  Plus, Trash2, Upload, ChevronRight, TrendingUp, Truck,
+  Plus, Trash2, Upload, ChevronRight, TrendingUp, Truck, RotateCcw,
   Monitor, Smartphone, CreditCard, UserCircle,
-  UserCheck, Edit2, X, ImagePlus, UserPlus, ShoppingBag, ArrowUpRight, ArrowDownRight
+  UserCheck, Edit2, X, ImagePlus, UserPlus, ShoppingBag, ArrowUpRight, ArrowDownRight,
+  Search
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import RoleGuard from '@/components/RoleGuard';
+import ModalPortal from '@/components/ModalPortal';
 
 const card: React.CSSProperties = {
   background: '#FFFFFF',
@@ -59,6 +61,8 @@ function AdminContent() {
   const [selectedFile,       setSelectedFile]       = useState<File | null>(null);
   const [uploading,          setUploading]          = useState(false);
   const [filterCategory,     setFilterCategory]     = useState('all');
+  const [menuSearch,         setMenuSearch]         = useState('');
+  const [menuFilterStatus,   setMenuFilterStatus]   = useState<'all'|'active'|'archived'>('active');
 
   // ── Menu: déclinaisons (simple — non-variant products) ──
   const [simpleDecls,  setSimpleDecls]  = useState<ProductSizeOption[]>([]);
@@ -251,8 +255,15 @@ function AdminContent() {
   }
 
   async function deleteProduct(id: string) {
-    if (!confirm('Supprimer ce produit ?')) return;
-    await supabase.from('resto-products').delete().eq('id', id);
+    if (!confirm('Retirer ce produit du menu ? Il ne sera plus disponible aux commandes mais les ventes passées restent intactes.')) return;
+    const { error } = await supabase.from('resto-products').update({ available: false }).eq('id', id);
+    if (error) { alert('Erreur: ' + error.message); return; }
+    fetchData();
+  }
+
+  async function restoreProduct(id: string) {
+    const { error } = await supabase.from('resto-products').update({ available: true }).eq('id', id);
+    if (error) { alert('Erreur: ' + error.message); return; }
     fetchData();
   }
 
@@ -305,8 +316,29 @@ function AdminContent() {
   }
 
   async function addExpense() {
-    if (!expTitle || !expAmount) return alert('Remplissez les champs');
-    await supabase.from('resto-expenses').insert([{ title: expTitle, amount: parseFloat(expAmount), type: expType }]);
+    if (!expTitle.trim() || !expAmount) return alert('Remplissez les champs');
+    const amount = parseFloat(expAmount);
+    if (isNaN(amount) || amount <= 0) return alert('Montant invalide');
+
+    const now = new Date().toISOString();
+    const title = expType === 'admin'
+      ? `[ADMIN] ${expTitle.trim()}`
+      : expTitle.trim();
+
+    // Try full payload with type first; fall back without type if DB rejects the value
+    let { error } = await supabase.from('resto-expenses')
+      .insert([{ title, amount, type: expType, created_at: now }]);
+
+    if (error) {
+      const r2 = await supabase.from('resto-expenses')
+        .insert([{ title, amount, type: 'ordinaire', created_at: now }]);
+      if (r2.error) {
+        const r3 = await supabase.from('resto-expenses')
+          .insert([{ title, amount, created_at: now }]);
+        if (r3.error) { alert('Erreur: ' + r3.error.message); return; }
+      }
+    }
+
     setExpTitle(''); setExpAmount(''); fetchData();
   }
 
@@ -348,8 +380,9 @@ function AdminContent() {
   const caTotal    = caSalle + caExterne + caComptoir;
   const avgOrder   = paidOrders.length ? Math.round(caTotal / paidOrders.length) : 0;
   const totalExpenses = expenses.reduce((a,e) => a + (e.amount||0), 0);
-  const expOrdinaire  = expenses.filter(e => e.type !== 'admin').reduce((a,e) => a + e.amount, 0);
-  const expAdmin      = expenses.filter(e => e.type === 'admin' ).reduce((a,e) => a + e.amount, 0);
+  const isAdminExp    = (e: any) => e.type === 'admin' || (e.title || '').startsWith('[ADMIN] ');
+  const expOrdinaire  = expenses.filter(e => !isAdminExp(e)).reduce((a,e) => a + e.amount, 0);
+  const expAdmin      = expenses.filter(e =>  isAdminExp(e)).reduce((a,e) => a + e.amount, 0);
   const payByCash     = paidOrders.filter(o => o.payment_method === 'cash'  ).reduce((a,o)=>a+(o.total||0),0);
   const payByWave     = paidOrders.filter(o => o.payment_method === 'wave'  ).reduce((a,o)=>a+(o.total||0),0);
   const payByOrange   = paidOrders.filter(o => o.payment_method === 'orange').reduce((a,o)=>a+(o.total||0),0);
@@ -716,7 +749,34 @@ function AdminContent() {
 
               {/* ── Product list ── */}
               <div>
-                {/* Filter row */}
+                {/* ── Search + status filter ── */}
+                <div style={{ display:'flex', gap:'0.65rem', marginBottom:'0.875rem', alignItems:'center', flexWrap:'wrap' }}>
+                  {/* Search input */}
+                  <div style={{ position:'relative', flex:1, minWidth:'160px' }}>
+                    <Search size={14} style={{ position:'absolute', left:'0.75rem', top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }} />
+                    <input
+                      value={menuSearch}
+                      onChange={e=>setMenuSearch(e.target.value)}
+                      placeholder="Rechercher un plat…"
+                      style={{ width:'100%', padding:'0.55rem 0.75rem 0.55rem 2.25rem', borderRadius:'10px', border:'1.5px solid var(--border-color)', background:'var(--bg-secondary)', fontSize:'0.82rem', fontWeight:'600', color:'var(--text-primary)', outline:'none' }}
+                    />
+                  </div>
+                  {/* Status toggle */}
+                  <div style={{ display:'flex', background:'var(--bg-tertiary)', borderRadius:'10px', padding:'3px', gap:'2px', flexShrink:0 }}>
+                    {(['active','all','archived'] as const).map(s=>(
+                      <button key={s} onClick={()=>setMenuFilterStatus(s)}
+                        style={{ padding:'0.35rem 0.75rem', borderRadius:'8px', border:'none', fontWeight:'800', fontSize:'0.65rem', cursor:'pointer', transition:'all 0.15s', letterSpacing:'0.04em',
+                          background: menuFilterStatus===s ? (s==='archived' ? 'var(--accent-danger)' : 'var(--accent-primary)') : 'transparent',
+                          color: menuFilterStatus===s ? 'white' : 'var(--text-muted)',
+                          boxShadow: menuFilterStatus===s ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+                        }}>
+                        {s==='active'?'ACTIFS':s==='archived'?'RETIRÉS':'TOUS'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Category chips */}
                 <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', marginBottom:'1.1rem' }}>
                   {['all',...CATS].map(cat=>(
                     <button key={cat} onClick={()=>setFilterCategory(cat)}
@@ -726,8 +786,31 @@ function AdminContent() {
                   ))}
                 </div>
 
+                {/* Result count */}
+                {(() => {
+                  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+                  const total = products.filter(p => {
+                    const matchCat    = filterCategory==='all' || p.category===filterCategory;
+                    const matchSearch = !menuSearch.trim() || norm(p.name).includes(norm(menuSearch));
+                    const matchStatus = menuFilterStatus==='all' || (menuFilterStatus==='active' ? p.available!==false : p.available===false);
+                    return matchCat && matchSearch && matchStatus;
+                  }).length;
+                  return total === 0 ? (
+                    <p style={{ textAlign:'center', color:'var(--text-muted)', padding:'2rem 0', fontSize:'0.82rem' }}>Aucun produit trouvé</p>
+                  ) : (
+                    <p style={{ fontSize:'0.62rem', fontWeight:'900', color:'var(--text-muted)', letterSpacing:'0.1em', marginBottom:'0.75rem' }}>{total} PRODUIT{total>1?'S':''}</p>
+                  );
+                })()}
+
                 <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:'0.75rem' }}>
-                  {products.filter(p=>filterCategory==='all'||p.category===filterCategory).map(p=>{
+                  {products.filter(p=>{
+                    const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+                    const matchCat    = filterCategory==='all' || p.category===filterCategory;
+                    const matchSearch = !menuSearch.trim() || norm(p.name).includes(norm(menuSearch));
+                    const matchStatus = menuFilterStatus==='all' || (menuFilterStatus==='active' ? p.available!==false : p.available===false);
+                    return matchCat && matchSearch && matchStatus;
+                  }).map(p=>{
+                    const isArchived = p.available === false;
                     const priceLine = (() => {
                       if (p.variants?.length) {
                         const prices = [...new Set(p.variants.flatMap(v => v.options?.length ? v.options.map(o=>o.price) : v.price?[v.price]:[] ))].sort((a,b)=>a-b);
@@ -740,23 +823,31 @@ function AdminContent() {
                       return p.price.toLocaleString()+' F';
                     })();
                     return (
-                      <div key={p.id} className="hover-scale" style={{ display:'flex', alignItems:'center', gap:'1rem', padding:'0.75rem 1rem', background:'white', border:'1px solid var(--border-color)', borderRadius:'14px', boxShadow:'var(--shadow-sm)' }}>
+                      <div key={p.id} className={isArchived ? '' : 'hover-scale'} style={{ display:'flex', alignItems:'center', gap:'1rem', padding:'0.75rem 1rem', background: isArchived ? 'var(--bg-tertiary)' : 'white', border:'1px solid var(--border-color)', borderRadius:'14px', boxShadow:'var(--shadow-sm)', opacity: isArchived ? 0.6 : 1 }}>
                         {/* Thumbnail */}
-                        <div style={{ width:'52px', height:'52px', borderRadius:'10px', background: p.image?`url(${p.image}) center/cover`:'var(--bg-tertiary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.4rem', overflow:'hidden', flexShrink:0 }}>
+                        <div style={{ width:'52px', height:'52px', borderRadius:'10px', background: p.image?`url(${p.image}) center/cover`:'var(--bg-tertiary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.4rem', overflow:'hidden', flexShrink:0, filter: isArchived ? 'grayscale(1)' : 'none' }}>
                           {!p.image && '🥘'}
                         </div>
                         {/* Info */}
                         <div style={{ flex:1, minWidth:0 }}>
-                          <h4 style={{ fontWeight:'800', fontSize:'0.875rem', marginBottom:'0.1rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</h4>
-                          <p style={{ fontSize:'0.62rem', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{p.category}</p>
+                          <h4 style={{ fontWeight:'800', fontSize:'0.875rem', marginBottom:'0.1rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration: isArchived ? 'line-through' : 'none' }}>{p.name}</h4>
+                          <p style={{ fontSize:'0.62rem', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>
+                            {p.category}{isArchived && <span style={{ color:'var(--accent-danger)', fontWeight:'900', marginLeft:'0.5rem' }}>RETIRÉ</span>}
+                          </p>
                         </div>
                         {/* Prices */}
-                        <p style={{ color:'var(--accent-primary)', fontWeight:'900', fontSize:'0.82rem', flexShrink:0, whiteSpace:'nowrap' }}>{priceLine}</p>
+                        <p style={{ color: isArchived ? 'var(--text-muted)' : 'var(--accent-primary)', fontWeight:'900', fontSize:'0.82rem', flexShrink:0, whiteSpace:'nowrap' }}>{priceLine}</p>
                         {/* Actions */}
                         <div style={{ display:'flex', gap:'0.4rem', flexShrink:0 }}>
-                          <button onClick={()=>{ setEditingProduct(p); setEditProdName(p.name); setEditProdPrice(p.price>0?p.price.toString():''); setEditProdCategory(p.category||''); setEditFile(null); setEditVariants(p.variants?JSON.parse(JSON.stringify(p.variants)):[]); setEditSimpleDecls(p.options?JSON.parse(JSON.stringify(p.options)):[]); setEditOpenDeclFor(null); }}
-                            style={{ background:'var(--bg-secondary)', border:'1px solid var(--border-color)', color:'var(--accent-primary)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Edit2 size={14}/></button>
-                          <button onClick={()=>deleteProduct(p.id)} style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.15)', color:'var(--accent-danger)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Trash2 size={14}/></button>
+                          {!isArchived && (
+                            <button onClick={()=>{ setEditingProduct(p); setEditProdName(p.name); setEditProdPrice(p.price>0?p.price.toString():''); setEditProdCategory(p.category||''); setEditFile(null); setEditVariants(p.variants?JSON.parse(JSON.stringify(p.variants)):[]); setEditSimpleDecls(p.options?JSON.parse(JSON.stringify(p.options)):[]); setEditOpenDeclFor(null); }}
+                              style={{ background:'var(--bg-secondary)', border:'1px solid var(--border-color)', color:'var(--accent-primary)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Edit2 size={14}/></button>
+                          )}
+                          {isArchived ? (
+                            <button onClick={()=>restoreProduct(p.id)} title="Remettre au menu" style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', color:'var(--accent-success)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><RotateCcw size={14}/></button>
+                          ) : (
+                            <button onClick={()=>deleteProduct(p.id)} title="Retirer du menu" style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.15)', color:'var(--accent-danger)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Trash2 size={14}/></button>
+                          )}
                         </div>
                       </div>
                     );
@@ -765,6 +856,7 @@ function AdminContent() {
               </div>
 
               {/* ── Edit modal ── */}
+              <ModalPortal>
               {editingProduct && (
                 <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', backdropFilter:'blur(8px)', zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
                   <div style={{ background:'white', border:'1px solid var(--border-color)', borderRadius:'24px', width:'100%', maxWidth:'680px', maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'var(--shadow-lg)', overflow:'hidden' }}>
@@ -938,6 +1030,7 @@ function AdminContent() {
                   </div>
                 </div>
               )}
+              </ModalPortal>
             </div>
           )}
 
@@ -1135,22 +1228,22 @@ function AdminContent() {
                     <button key={v} onClick={() => setDepensesSubTab(v)}
                       style={{ padding:'0.45rem 1.1rem', borderRadius:'8px', border:'none', background:depensesSubTab===v?'var(--bg-tertiary)':'transparent', color:depensesSubTab===v?'var(--text-primary)':'var(--text-muted)', fontWeight:'800', fontSize:'0.78rem', cursor:'pointer' }}>
                       {l} <span style={{ marginLeft:'0.3rem', fontSize:'0.65rem', background:depensesSubTab===v?'var(--accent-primary)':'var(--bg-tertiary)', color:depensesSubTab===v?'white':'var(--text-muted)', borderRadius:'100px', padding:'0.1rem 0.4rem', fontWeight:'900' }}>
-                        {depensesSubTab===v ? (v==='ordinaire'?expenses.filter(e=>e.type!=='admin').length:expenses.filter(e=>e.type==='admin').length) : (v==='ordinaire'?expenses.filter(e=>e.type!=='admin').length:expenses.filter(e=>e.type==='admin').length)}
+                        {v==='ordinaire' ? expenses.filter(e=>!isAdminExp(e)).length : expenses.filter(e=>isAdminExp(e)).length}
                       </span>
                     </button>
                   ))}
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-                  {(depensesSubTab==='ordinaire' ? expenses.filter(e=>e.type!=='admin') : expenses.filter(e=>e.type==='admin')).map(e => (
+                  {(depensesSubTab==='ordinaire' ? expenses.filter(e=>!isAdminExp(e)) : expenses.filter(e=>isAdminExp(e))).map(e => (
                     <div key={e.id} style={{ padding:'0.875rem 1rem', background:'var(--bg-secondary)', borderRadius:'10px', border:'1px solid var(--border-color)', borderLeft:`3px solid ${depensesSubTab==='admin'?'#7C3AED':'var(--accent-warning)'}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                       <div>
-                        <p style={{ fontWeight:'800', fontSize:'0.875rem' }}>{e.title}</p>
+                        <p style={{ fontWeight:'800', fontSize:'0.875rem' }}>{(e.title || '').replace(/^\[ADMIN\]\s*/, '')}</p>
                         <p style={{ fontSize:'0.63rem', color:'var(--text-muted)', marginTop:'0.15rem' }}>{new Date(e.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'})}</p>
                       </div>
                       <span style={{ fontWeight:'900', color:'var(--accent-danger)', whiteSpace:'nowrap', marginLeft:'1rem' }}>- {e.amount.toLocaleString()} F</span>
                     </div>
                   ))}
-                  {(depensesSubTab==='ordinaire' ? expenses.filter(e=>e.type!=='admin') : expenses.filter(e=>e.type==='admin')).length === 0 && (
+                  {(depensesSubTab==='ordinaire' ? expenses.filter(e=>!isAdminExp(e)) : expenses.filter(e=>isAdminExp(e))).length === 0 && (
                     <p style={{ textAlign:'center', color:'var(--text-muted)', padding:'2rem', fontSize:'0.82rem' }}>Aucune dépense dans cette catégorie</p>
                   )}
                 </div>

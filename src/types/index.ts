@@ -46,6 +46,7 @@ export interface Product {
   price: number;
   category: string;
   image?: string;
+  available?: boolean;
   recipe?: RecipeIngredient[];
   variants?: ProductVariant[];
   options?: ProductSizeOption[];
