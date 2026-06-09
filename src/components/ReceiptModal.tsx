@@ -26,6 +26,7 @@ const PAY_LABELS: Record<string, string> = {
 };
 
 const BEBAS  = 'var(--font-bebas), "Bebas Neue", sans-serif';
+const UBUNTU = 'var(--font-ubuntu), "Ubuntu", sans-serif';
 const OSWALD = 'var(--font-oswald), "Oswald", sans-serif';
 const MONO   = '"Courier New", Courier, monospace';
 const SEP    = '- '.repeat(80);
@@ -48,7 +49,7 @@ export default function ReceiptModal({ order, onClose }: { order: ReceiptOrder; 
   const { profile } = useAuth();
 
   const [promotionPct, setPromotionPct] = useState(0);
-  const [address,      setAddress]      = useState('Abidjan, Cocody Angré');
+  const [address,      setAddress]      = useState('Abidjan Riviera route d\'Abatta, près de la GRANDE BOUCHERIE D\'ABATTA');
   const [phone,        setPhone]        = useState('+225 07 67 06 13 00');
 
   useEffect(() => {
@@ -137,13 +138,13 @@ export default function ReceiptModal({ order, onClose }: { order: ReceiptOrder; 
 
           {/* HEADER */}
           <div style={{ textAlign: 'center', paddingBottom: '8px', paddingTop: '4px' }}>
-            <p style={{ fontFamily: BEBAS, fontSize: '26px', letterSpacing: '0.12em', lineHeight: 1, margin: 0 }}>
-              MARMITE D'OR
+            <p style={{ fontFamily: UBUNTU, fontSize: '22px', fontWeight: '700', letterSpacing: '0.06em', lineHeight: 1, margin: 0 }}>
+              LA MARMITE D'OR
             </p>
             <p style={{ fontFamily: BEBAS, fontSize: '10px', letterSpacing: '0.18em', color: '#555', margin: '1px 0 3px' }}>
               RESTAURANT · BAR
             </p>
-            <p style={{ fontFamily: MONO, fontSize: '9px', color: '#444', margin: '1px 0' }}>{address}</p>
+            <p style={{ fontFamily: MONO, fontSize: '9px', color: '#444', margin: '1px 0', fontWeight: '500' }}>{address}</p>
             <p style={{ fontFamily: MONO, fontSize: '9px', color: '#444', margin: '1px 0', fontWeight: '600' }}>{phone}</p>
           </div>
 
