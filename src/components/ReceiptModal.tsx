@@ -138,11 +138,11 @@ export default function ReceiptModal({ order, onClose }: { order: ReceiptOrder; 
 
           {/* HEADER */}
           <div style={{ textAlign: 'center', paddingBottom: '8px', paddingTop: '4px' }}>
-            <p style={{ fontFamily: UBUNTU, fontSize: '22px', fontWeight: '700', letterSpacing: '0.06em', lineHeight: 1, margin: 0 }}>
+            <p style={{ fontFamily: UBUNTU, fontSize: '22px', fontWeight: '700', letterSpacing: '0.06em', lineHeight: 1, margin: 0, WebkitTextStroke: '0.6px currentColor' }}>
               LA MARMITE D'OR
             </p>
             <p style={{ fontFamily: BEBAS, fontSize: '10px', letterSpacing: '0.18em', color: '#555', margin: '1px 0 3px' }}>
-              RESTAURANT · BAR
+              RESTAURANT · CAVE
             </p>
             <p style={{ fontFamily: MONO, fontSize: '9px', color: '#444', margin: '1px 0', fontWeight: '500' }}>{address}</p>
             <p style={{ fontFamily: MONO, fontSize: '9px', color: '#444', margin: '1px 0', fontWeight: '600' }}>{phone}</p>
