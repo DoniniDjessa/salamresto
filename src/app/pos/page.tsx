@@ -5,7 +5,7 @@ import { OrderStatus } from '@/types';
 import {
   TrendingUp, ShoppingBag, Clock, CheckCircle2,
   CreditCard, Search, Monitor, Smartphone, Utensils,
-  Truck, MapPin, X, Pencil, Check, Calendar, ChevronLeft, ChevronRight,
+  Truck, MapPin, X, Pencil, Trash2, Check, Calendar, ChevronLeft, ChevronRight,
   Eye, User, Phone, ArrowUpDown, GitMerge
 } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
@@ -150,7 +150,8 @@ function VentesContent() {
 
   const [orders,     setOrders]     = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
-  const [period,     setPeriod]     = useState<'today' | 'yesterday' | 'month' | 'range'>('today');
+  const [period,     setPeriod]     = useState<'today' | 'yesterday' | 'month' | 'month-pick' | 'range'>('today');
+  const [monthPick,  setMonthPick]  = useState<string>(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; });
   const [catFilter,  setCatFilter]  = useState<'all' | 'nourriture' | 'boisson' | 'vin'>('all');
   const [startDate,  setStartDate]  = useState('');
   const [endDate,    setEndDate]    = useState('');
@@ -194,7 +195,7 @@ function VentesContent() {
       .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, fetchOrders)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [period, startDate, endDate]);
+  }, [period, startDate, endDate, monthPick]);
 
   async function fetchOrders() {
     setLoading(true);
@@ -206,6 +207,10 @@ function VentesContent() {
       q = q.gte('created_at', yesterdayStart()).lt('created_at', todayStart());
     } else if (period === 'month') {
       q = q.gte('created_at', monthStart());
+    } else if (period === 'month-pick' && monthPick) {
+      const [y, m] = monthPick.split('-').map(Number);
+      q = q.gte('created_at', new Date(y, m-1, 1).toISOString())
+           .lte('created_at', new Date(y, m, 0, 23, 59, 59).toISOString());
     } else if (period === 'range' && startDate && endDate) {
       const end = new Date(endDate); end.setDate(end.getDate() + 1);
       q = q.gte('created_at', new Date(startDate).toISOString()).lte('created_at', end.toISOString());
@@ -270,6 +275,32 @@ function VentesContent() {
     setEditModal(null);
     fetchOrders();
   };
+
+  async function deleteOrder(o: any) {
+    const label = o._isGroup
+      ? `Supprimer la session complète (${(o._orders || []).length} commandes) ?`
+      : 'Supprimer cette commande ?';
+    if (!window.confirm(label)) return;
+    if (o._isGroup) {
+      const ids = (o._orders || []).map((r: any) => r.id);
+      await supabase.from('resto-orders').delete().in('id', ids);
+    } else {
+      await supabase.from('resto-orders').delete().eq('id', o.id);
+    }
+    fetchOrders();
+  }
+
+  async function deleteItemFromOrder(orderId: string, itemIndex: number, currentItems: any[]) {
+    const newItems = currentItems.filter((_, i) => i !== itemIndex);
+    const newTotal = newItems.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+    const { error } = await supabase.from('resto-orders')
+      .update({ items: newItems, total: newTotal })
+      .eq('id', orderId);
+    if (error) { alert('Erreur: ' + error.message); return; }
+    // Refresh detail view and list
+    setDetailOrder((prev: any) => prev ? { ...prev, items: newItems, total: newTotal } : prev);
+    fetchOrders();
+  }
 
   const openDeliveryModal = (o: any) => {
     setDeliveryOrder(o);
@@ -342,7 +373,7 @@ function VentesContent() {
   }
 
   // Reset page whenever filter or sort changes
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [search, period, startDate, endDate, sortAsc, catFilter]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [search, period, startDate, endDate, monthPick, sortAsc, catFilter]);
 
   // Client-side filter — table, client name, item name, price
   const filtered = orders.filter(o => {
@@ -393,7 +424,7 @@ function VentesContent() {
     { label: "EN CUISINE",          value: `${inKitchen.length}`,            icon: <Clock size={18}/>,      color: '#6366F1',               bg: 'rgba(99,102,241,0.09)'  },
   ];
 
-  const periodLabel = { today: "Aujourd'hui", yesterday: 'Hier', month: 'Ce mois', range: 'Période' };
+  const periodLabel: Record<string, string> = { today: "Aujourd'hui", yesterday: 'Hier', month: 'Ce mois', 'month-pick': monthPick ? new Date(monthPick + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : 'Mois', range: 'Période' };
 
   return (
     <RoleGuard allowedRoles={['superAdmin', 'admin', 'manager', 'caisse']}>
@@ -420,13 +451,23 @@ function VentesContent() {
 
           {/* Period selector */}
           <div style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '4px', border: '1px solid var(--border-color)', gap: '2px' }}>
-            {(['today', 'yesterday', 'month', 'range'] as const).map(p => (
+            {(['today', 'yesterday', 'month', 'month-pick', 'range'] as const).map(p => (
               <button key={p} onClick={() => setPeriod(p)}
                 style={{ padding: '0.5rem 1rem', borderRadius: '9px', background: period === p ? 'white' : 'transparent', color: period === p ? 'var(--text-primary)' : 'var(--text-secondary)', border: 'none', fontWeight: '700', fontSize: '0.78rem', cursor: 'pointer', transition: 'all 0.15s', boxShadow: period === p ? 'var(--shadow-sm)' : 'none', whiteSpace: 'nowrap' }}>
-                {p === 'today' ? "Aujourd'hui" : p === 'yesterday' ? 'Hier' : p === 'month' ? 'Ce Mois' : 'Période'}
+                {p === 'today' ? "Aujourd'hui" : p === 'yesterday' ? 'Hier' : p === 'month' ? 'Ce Mois' : p === 'month-pick' ? 'Mois ↓' : 'Période'}
               </button>
             ))}
           </div>
+
+          {/* Month picker */}
+          {period === 'month-pick' && (
+            <input
+              type="month"
+              value={monthPick}
+              onChange={e => { if (e.target.value) setMonthPick(e.target.value); }}
+              style={{ padding: '0.5rem 0.75rem', border: '1.5px solid var(--accent-primary)', borderRadius: '9px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', color: 'var(--text-primary)', background: 'white', outline: 'none', cursor: 'pointer' }}
+            />
+          )}
 
           {/* Date range inputs */}
           {period === 'range' && (
@@ -675,10 +716,16 @@ function VentesContent() {
                                 </button>
                               )}
                               {isSuperAdmin && (
-                                <button onClick={() => setDetailOrder(o)} title="Modifier (SuperAdmin)"
-                                  style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6366F1', flexShrink: 0 }}>
-                                  <Pencil size={13} />
-                                </button>
+                                <>
+                                  <button onClick={() => setDetailOrder(o)} title="Modifier (SuperAdmin)"
+                                    style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6366F1', flexShrink: 0 }}>
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button onClick={() => deleteOrder(o)} title="Supprimer (SuperAdmin)"
+                                    style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent-danger)', flexShrink: 0 }}>
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
                               )}
                             </>
                           ) : (
@@ -704,10 +751,16 @@ function VentesContent() {
                                 </button>
                               )}
                               {isSuperAdmin && (
-                                <button onClick={() => openEditModal(o)} title="Modifier montant / date (SuperAdmin)"
-                                  style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6366F1', flexShrink: 0 }}>
-                                  <Pencil size={13} />
-                                </button>
+                                <>
+                                  <button onClick={() => openEditModal(o)} title="Modifier montant / date (SuperAdmin)"
+                                    style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6366F1', flexShrink: 0 }}>
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button onClick={() => deleteOrder(o)} title="Supprimer (SuperAdmin)"
+                                    style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent-danger)', flexShrink: 0 }}>
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
                               )}
                             </>
                           )}
@@ -1011,15 +1064,24 @@ function VentesContent() {
                         <div style={{ padding: '0.5rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                           {subItems.map((item: any, ii: number) => (
                             <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
-                              <span>
+                              <span style={{ flex: 1, minWidth: 0 }}>
                                 <span style={{ fontWeight: '900', color: 'var(--accent-primary)' }}>{item.quantity}× </span>
                                 <span style={{ fontWeight: '700' }}>{item.name}</span>
                               </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0, marginLeft: '0.5rem' }}>
                               {hasPrices && (item.price ?? 0) > 0 && (
                                 <span style={{ fontWeight: '800', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
                                   {((item.price ?? 0) * item.quantity).toLocaleString()} F
                                 </span>
                               )}
+                              {isSuperAdmin && (
+                                <button onClick={() => deleteItemFromOrder(o.id, ii, subItems)}
+                                  title="Supprimer cet article"
+                                  style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent-danger)', flexShrink: 0 }}>
+                                  <Trash2 size={11} />
+                                </button>
+                              )}
+                              </div>
                             </div>
                           ))}
                           {subItems.length === 0 && <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Aucun article</p>}
@@ -1096,16 +1158,25 @@ function VentesContent() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {items.map((item: any, i: number) => (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.875rem', background: 'var(--bg-secondary)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
                         <span style={{ fontWeight: '900', color: 'var(--accent-primary)', fontSize: '0.85rem', flexShrink: 0 }}>{item.quantity}×</span>
                         <span style={{ fontWeight: '700', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                       </div>
-                      {hasItemPrices && (item.price ?? 0) > 0 && (
-                        <div style={{ flexShrink: 0, marginLeft: '1rem', textAlign: 'right' }}>
-                          <p style={{ fontWeight: '800', fontSize: '0.82rem' }}>{((item.price ?? 0) * item.quantity).toLocaleString()} F</p>
-                          {item.quantity > 1 && <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{(item.price ?? 0).toLocaleString()} F / u.</p>}
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, marginLeft: '0.75rem' }}>
+                        {hasItemPrices && (item.price ?? 0) > 0 && (
+                          <div style={{ textAlign: 'right' }}>
+                            <p style={{ fontWeight: '800', fontSize: '0.82rem' }}>{((item.price ?? 0) * item.quantity).toLocaleString()} F</p>
+                            {item.quantity > 1 && <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{(item.price ?? 0).toLocaleString()} F / u.</p>}
+                          </div>
+                        )}
+                        {isSuperAdmin && (
+                          <button onClick={() => deleteItemFromOrder(d.id, i, items)}
+                            title="Supprimer cet article"
+                            style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent-danger)', flexShrink: 0 }}>
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {items.length === 0 && (

@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Outfit } from "next/font/google";
+import { Inter, Outfit, Bebas_Neue, Oswald } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
-const outfit = Outfit({ variable: "--font-outfit", subsets: ["latin"] });
+const inter  = Inter({      variable: "--font-inter",  subsets: ["latin"] });
+const outfit = Outfit({     variable: "--font-outfit", subsets: ["latin"] });
+const bebas  = Bebas_Neue({ variable: "--font-bebas",  subsets: ["latin"], weight: "400" });
+const oswald = Oswald({     variable: "--font-oswald", subsets: ["latin"], weight: ["400","500","600","700"] });
 
 export const metadata: Metadata = {
   title: "Marmite d'Or — Gestion Restaurant",
@@ -31,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${inter.variable} ${outfit.variable}`}>
+    <html lang="fr" className={`${inter.variable} ${outfit.variable} ${bebas.variable} ${oswald.variable}`}>
       <body style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', margin: 0, minHeight: '100vh' }}>
         <ServiceWorkerRegister />
         <AuthProvider>

@@ -110,11 +110,14 @@ function AdminContent() {
   const [expAmount, setExpAmount] = useState('');
 
   // ── Date range filter (shared across analytics / accounting / dépenses) ──
-  const [dateFrom,   setDateFrom]   = useState<string>(() => {
+  const [dateFrom,      setDateFrom]      = useState<string>(() => {
     const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
   });
-  const [dateTo,     setDateTo]     = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [datePreset, setDatePreset] = useState<'today'|'week'|'month'|'all'|'custom'>('month');
+  const [dateTo,        setDateTo]        = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [datePreset,    setDatePreset]    = useState<'today'|'yesterday'|'week'|'month'|'all'|'custom'>('month');
+  const [adminMonthPick, setAdminMonthPick] = useState<string>(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  });
 
   // ── Pagination ──
   const [ordersPage,  setOrdersPage]  = useState(1);
@@ -125,17 +128,28 @@ function AdminContent() {
   const [depensesSubTab, setDepensesSubTab] = useState<'ordinaire'|'admin'>('ordinaire');
   const [expType,        setExpType]        = useState<'ordinaire'|'admin'>('ordinaire');
 
-  function applyPreset(preset: 'today'|'week'|'month'|'all') {
+  function applyPreset(preset: 'today'|'yesterday'|'week'|'month'|'all') {
     setDatePreset(preset);
     setOrdersPage(1);
     if (preset === 'all') return;
     const now = new Date();
     const from = new Date();
-    if (preset === 'today') { from.setHours(0,0,0,0); }
-    if (preset === 'week')  { from.setDate(now.getDate() - 7); }
-    if (preset === 'month') { from.setDate(1); from.setHours(0,0,0,0); }
+    let to = new Date();
+    if (preset === 'today')     { from.setHours(0,0,0,0); }
+    if (preset === 'yesterday') { from.setDate(now.getDate()-1); from.setHours(0,0,0,0); to.setDate(now.getDate()-1); }
+    if (preset === 'week')      { from.setDate(now.getDate()-7); }
+    if (preset === 'month')     { from.setDate(1); from.setHours(0,0,0,0); }
     setDateFrom(from.toISOString().split('T')[0]);
-    setDateTo(now.toISOString().split('T')[0]);
+    setDateTo(to.toISOString().split('T')[0]);
+  }
+
+  function applyMonthPick(val: string) {
+    if (!val) return;
+    setAdminMonthPick(val);
+    setDatePreset('custom');
+    const [y, m] = val.split('-').map(Number);
+    setDateFrom(new Date(y, m-1, 1).toISOString().split('T')[0]);
+    setDateTo(new Date(y, m, 0).toISOString().split('T')[0]);
   }
 
   useEffect(() => { fetchData(); }, [activeTab, dateFrom, dateTo]);
@@ -410,13 +424,21 @@ function AdminContent() {
 
   const filterBar = (
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.75rem' }}>
-      <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
-        {([['today',"Aujourd'hui"],['week','7 jours'],['month','Ce mois'],['all','Tout temps']] as const).map(([v,l]) => (
+      <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', alignItems:'center' }}>
+        {([['today',"Aujourd'hui"],['yesterday','Hier'],['week','7 jours'],['month','Ce mois'],['all','Tout temps']] as const).map(([v,l]) => (
           <button key={v} onClick={() => applyPreset(v)}
-            style={{ padding:'0.4rem 0.875rem', borderRadius:'8px', border:`1.5px solid ${datePreset===v?'var(--accent-primary)':'var(--border-color)'}`, background:datePreset===v?'var(--accent-primary)':'white', color:datePreset===v?'white':'var(--text-secondary)', fontWeight:'700', fontSize:'0.72rem', cursor:'pointer', transition:'all 0.15s' }}>
+            style={{ padding:'0.4rem 0.875rem', borderRadius:'8px', border:`1.5px solid ${datePreset===v?'var(--accent-primary)':'var(--border-color)'}`, background:datePreset===v?'var(--accent-primary)':'white', color:datePreset===v?'white':'var(--text-secondary)', fontWeight:'700', fontSize:'0.72rem', cursor:'pointer', transition:'all 0.15s', whiteSpace:'nowrap' }}>
             {l}
           </button>
         ))}
+        {/* Month picker — always visible; selecting it activates custom range */}
+        <input
+          type="month"
+          value={adminMonthPick}
+          onChange={e => applyMonthPick(e.target.value)}
+          title="Choisir un mois"
+          style={{ ...IS, width:'150px', fontSize:'0.75rem', padding:'0.38rem 0.6rem', cursor:'pointer', border:`1.5px solid var(--border-color)`, borderRadius:'8px' }}
+        />
       </div>
       {datePreset !== 'all' && (
         <div style={{ display:'flex', gap:'0.5rem', alignItems:'center' }}>

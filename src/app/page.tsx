@@ -4,16 +4,27 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import {
   TrendingUp, ShoppingBag, Truck, Activity,
-  Bell, Search, ChevronRight, Clock, Monitor, Smartphone
+  Bell, Search, ChevronRight, Clock, Monitor, Smartphone,
 } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
 import { useAuth } from '@/context/AuthContext';
 
+type Period = 'today' | 'yesterday' | 'month' | 'month-pick' | 'range';
+
+const todayStr  = () => new Date().toISOString().split('T')[0];
+const curMonthStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+
 export default function Home() {
   const { profile } = useAuth();
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
-  const [stats, setStats] = useState({ totalRevenue: 0, totalExpenses: 0, deliveryWaiting: 0, deliverySuccess: 0 });
+  const [stats, setStats]   = useState({ totalRevenue: 0, totalExpenses: 0, deliveryWaiting: 0, deliverySuccess: 0 });
   const [loading, setLoading] = useState(true);
+
+  // ── Date filters ──
+  const [period,    setPeriod]    = useState<Period>('today');
+  const [monthPick, setMonthPick] = useState<string>(curMonthStr);
+  const [startDate, setStartDate] = useState('');
+  const [endDate,   setEndDate]   = useState('');
 
   useEffect(() => {
     fetchHomeData();
@@ -21,17 +32,60 @@ export default function Home() {
       .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, fetchHomeData)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [period, monthPick, startDate, endDate]);
+
+  function buildRange(): { from: string; to: string } | null {
+    const now = new Date();
+    if (period === 'today') {
+      const d = new Date(); d.setHours(0,0,0,0);
+      return { from: d.toISOString(), to: now.toISOString() };
+    }
+    if (period === 'yesterday') {
+      const f = new Date(); f.setDate(f.getDate()-1); f.setHours(0,0,0,0);
+      const t = new Date(); t.setDate(t.getDate()-1); t.setHours(23,59,59,999);
+      return { from: f.toISOString(), to: t.toISOString() };
+    }
+    if (period === 'month') {
+      const f = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: f.toISOString(), to: now.toISOString() };
+    }
+    if (period === 'month-pick' && monthPick) {
+      const [y, m] = monthPick.split('-').map(Number);
+      return {
+        from: new Date(y, m-1, 1).toISOString(),
+        to:   new Date(y, m, 0, 23, 59, 59).toISOString(),
+      };
+    }
+    if (period === 'range' && startDate && endDate) {
+      const t = new Date(endDate); t.setDate(t.getDate()+1);
+      return { from: new Date(startDate).toISOString(), to: t.toISOString() };
+    }
+    // range with incomplete inputs → today
+    const d = new Date(); d.setHours(0,0,0,0);
+    return { from: d.toISOString(), to: now.toISOString() };
+  }
 
   async function fetchHomeData() {
+    const range = buildRange();
+
+    let qOrders   = supabase.from('resto-orders').select('*').order('created_at', { ascending: false });
+    let qAllOrders = supabase.from('resto-orders').select('total, type, status');
+    let qExpenses  = supabase.from('resto-expenses').select('amount');
+
+    if (range) {
+      qOrders    = qOrders.gte('created_at', range.from).lte('created_at', range.to);
+      qAllOrders = qAllOrders.gte('created_at', range.from).lte('created_at', range.to);
+      qExpenses  = qExpenses.gte('created_at', range.from).lte('created_at', range.to);
+    }
+
     const [{ data: orders }, { data: allOrders }, { data: expenses }] = await Promise.all([
-      supabase.from('resto-orders').select('*').order('created_at', { ascending: false }).limit(8),
-      supabase.from('resto-orders').select('total, type, status'),
-      supabase.from('resto-expenses').select('amount'),
+      qOrders.limit(8),
+      qAllOrders,
+      qExpenses,
     ]);
-    if (orders)    setRecentOrders(orders);
-    // Only count orders that have been paid (termine = payment collected, paye = table cleared)
-    const totalRevenue  = allOrders?.filter(o => o.status === 'termine' || o.status === 'paye').reduce((a, o) => a + (o.total || 0), 0) ?? 0;
+
+    if (orders) setRecentOrders(orders);
+    const totalRevenue    = allOrders?.filter(o => o.status === 'termine' || o.status === 'paye').reduce((a, o) => a + (o.total || 0), 0) ?? 0;
     const deliveryWaiting = allOrders?.filter(o => o.type === 'external' && o.status !== 'livre' && o.status !== 'annule').length ?? 0;
     const deliverySuccess = allOrders?.filter(o => o.type === 'external' && o.status === 'livre').length ?? 0;
     const totalExpenses   = expenses?.reduce((a, e) => a + (e.amount || 0), 0) ?? 0;
@@ -39,46 +93,36 @@ export default function Home() {
     setLoading(false);
   }
 
+  const periodLabel: Record<Period, string> = {
+    today:       "Aujourd'hui",
+    yesterday:   'Hier',
+    month:       'Ce Mois',
+    'month-pick': monthPick ? new Date(monthPick + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : 'Mois',
+    range:       'Période',
+  };
+
   const tiles = [
-    {
-      label: 'REVENU TOTAL',
-      value: `${stats.totalRevenue.toLocaleString()} F`,
-      icon: <TrendingUp size={18} />,
-      color: 'var(--accent-primary)',
-      bg: 'rgba(249,115,22,0.09)',
-      sub: `${recentOrders.length} commandes`,
-    },
-    {
-      label: 'COMMANDES AUJOURD\'HUI',
-      value: `${recentOrders.length}`,
-      icon: <ShoppingBag size={18} />,
-      color: 'var(--accent-success)',
-      bg: 'rgba(16,185,129,0.09)',
-      sub: 'en temps réel',
-    },
-    {
-      label: 'LIVRAISONS RÉUSSIES',
-      value: `${stats.deliverySuccess}`,
-      icon: <Truck size={18} />,
-      color: 'var(--accent-warning)',
-      bg: 'rgba(245,158,11,0.09)',
-      sub: `${stats.deliveryWaiting} en attente`,
-    },
-    {
-      label: 'DÉPENSES',
-      value: `${stats.totalExpenses.toLocaleString()} F`,
-      icon: <Activity size={18} />,
-      color: 'var(--accent-danger)',
-      bg: 'rgba(239,68,68,0.09)',
-      sub: 'ce mois',
-    },
+    { label: 'REVENU TOTAL',          value: `${stats.totalRevenue.toLocaleString()} F`,  icon: <TrendingUp size={18}/>, color: 'var(--accent-primary)', bg: 'rgba(249,115,22,0.09)',  sub: `${recentOrders.length} commandes` },
+    { label: 'COMMANDES',             value: `${recentOrders.length}`,                    icon: <ShoppingBag size={18}/>,color: 'var(--accent-success)', bg: 'rgba(16,185,129,0.09)',  sub: periodLabel[period] },
+    { label: 'LIVRAISONS RÉUSSIES',  value: `${stats.deliverySuccess}`,                  icon: <Truck size={18}/>,      color: 'var(--accent-warning)', bg: 'rgba(245,158,11,0.09)',  sub: `${stats.deliveryWaiting} en attente` },
+    { label: 'DÉPENSES',              value: `${stats.totalExpenses.toLocaleString()} F`, icon: <Activity size={18}/>,   color: 'var(--accent-danger)',  bg: 'rgba(239,68,68,0.09)',   sub: periodLabel[period] },
   ];
 
   const statusStyle = (s: string): React.CSSProperties => {
     if (s === 'paye')       return { background: 'rgba(16,185,129,0.1)', color: '#059669' };
-    if (s === 'en_attente') return { background: 'rgba(239,68,68,0.1)', color: '#DC2626' };
+    if (s === 'en_attente') return { background: 'rgba(239,68,68,0.1)',  color: '#DC2626' };
     return { background: 'rgba(249,115,22,0.1)', color: '#EA580C' };
   };
+
+  const btnStyle = (active: boolean): React.CSSProperties => ({
+    padding: '0.5rem 1rem', borderRadius: '9px',
+    background: active ? 'white' : 'transparent',
+    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+    border: 'none', fontWeight: '700', fontSize: '0.78rem',
+    cursor: 'pointer', transition: 'all 0.15s',
+    boxShadow: active ? 'var(--shadow-sm)' : 'none',
+    whiteSpace: 'nowrap' as const,
+  });
 
   return (
     <RoleGuard allowedRoles={['superAdmin', 'admin', 'manager', 'caisse']}>
@@ -90,7 +134,9 @@ export default function Home() {
           <h1 style={{ fontSize: '1.75rem', fontWeight: '900', marginBottom: '0.2rem' }}>
             Bonjour, <span style={{ color: 'var(--accent-primary)' }}>{profile?.name || 'Chef'}</span> 👋
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Voici l'état de votre restaurant aujourd'hui.</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            Tableau de bord · {periodLabel[period]}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
           <div style={{ padding: '0.65rem 1rem', display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'white', border: '1.5px solid var(--border-color)', borderRadius: '12px', width: '240px', boxShadow: 'var(--shadow-sm)' }}>
@@ -103,14 +149,42 @@ export default function Home() {
         </div>
       </header>
 
+      {/* ── Date filters ── */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '4px', border: '1px solid var(--border-color)', gap: '2px' }}>
+          {(['today', 'yesterday', 'month', 'month-pick', 'range'] as const).map(p => (
+            <button key={p} onClick={() => setPeriod(p)} style={btnStyle(period === p)}>
+              {p === 'today' ? "Aujourd'hui" : p === 'yesterday' ? 'Hier' : p === 'month' ? 'Ce Mois' : p === 'month-pick' ? 'Mois ↓' : 'Période'}
+            </button>
+          ))}
+        </div>
+
+        {period === 'month-pick' && (
+          <input
+            type="month"
+            value={monthPick}
+            onChange={e => { if (e.target.value) setMonthPick(e.target.value); }}
+            style={{ padding: '0.5rem 0.75rem', border: '1.5px solid var(--accent-primary)', borderRadius: '9px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', color: 'var(--text-primary)', background: 'white', outline: 'none', cursor: 'pointer' }}
+          />
+        )}
+
+        {period === 'range' && (
+          <>
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+              style={{ padding: '0.5rem 0.75rem', border: '1.5px solid var(--border-color)', borderRadius: '9px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', color: 'var(--text-primary)', background: 'white', outline: 'none' }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+              style={{ padding: '0.5rem 0.75rem', border: '1.5px solid var(--border-color)', borderRadius: '9px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', color: 'var(--text-primary)', background: 'white', outline: 'none' }} />
+          </>
+        )}
+      </div>
+
       {/* Stat Tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem', marginBottom: '2.5rem' }}>
         {tiles.map(t => (
           <div key={t.label} className="stat-tile">
             <div className="stat-tile-top" style={{ background: t.color }} />
-            <div className="stat-tile-icon" style={{ background: t.bg, color: t.color }}>
-              {t.icon}
-            </div>
+            <div className="stat-tile-icon" style={{ background: t.bg, color: t.color }}>{t.icon}</div>
             <p className="stat-tile-value">{t.value}</p>
             <p className="stat-tile-label">{t.label}</p>
             {t.sub && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.sub}</p>}
@@ -159,7 +233,7 @@ export default function Home() {
             {recentOrders.length === 0 && !loading && (
               <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
                 <ShoppingBag size={32} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
-                <p style={{ fontSize: '0.8rem' }}>Aucune commande pour l'instant</p>
+                <p style={{ fontSize: '0.8rem' }}>Aucune commande sur cette période</p>
               </div>
             )}
           </div>
@@ -212,9 +286,9 @@ export default function Home() {
             <p style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.875rem' }}>ACCÈS RAPIDE</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {[
-                { label: 'Vente en salle', path: '/pos', color: 'var(--accent-primary)' },
-                { label: 'Écran cuisine', path: '/kitchen', color: 'var(--accent-success)' },
-                { label: 'Gestion menu', path: '/admin?tab=menu', color: 'var(--accent-warning)' },
+                { label: 'Vente en salle',  path: '/pos',            color: 'var(--accent-primary)' },
+                { label: 'Écran cuisine',   path: '/kitchen',         color: 'var(--accent-success)' },
+                { label: 'Gestion menu',    path: '/admin?tab=menu',  color: 'var(--accent-warning)' },
               ].map(l => (
                 <Link key={l.path} href={l.path} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 0.875rem', background: 'var(--bg-secondary)', borderRadius: '10px', border: '1px solid var(--border-color)', textDecoration: 'none', transition: 'all 0.15s' }}>
                   <span style={{ fontWeight: '700', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{l.label}</span>

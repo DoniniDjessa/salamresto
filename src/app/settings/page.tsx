@@ -1,6 +1,6 @@
 "use client";
-import { useState } from 'react';
-import { Settings, Store, Bell, Shield, Palette, Save, Globe, Phone, Mail, MapPin, QrCode, User, Lock, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, Store, Bell, Shield, Palette, Save, Globe, Phone, Mail, MapPin, QrCode, User, Lock, CheckCircle, FileText } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -36,12 +36,51 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('account');
   const [selectedQrTable, setSelectedQrTable] = useState(1);
 
+  // Ticket / TVA settings
+  const [tvaCode,      setTvaCode]      = useState('1');
+  const [tvaRate,      setTvaRate]      = useState('18');
+  const [tvaEnabled,   setTvaEnabled]   = useState('true');
+  const [promoPercent, setPromoPercent] = useState('0');
+  const [ticketSaving, setTicketSaving] = useState(false);
+  const [ticketSaved,  setTicketSaved]  = useState(false);
+
   // Password change state
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState(false);
+
+  useEffect(() => {
+    supabase.from('resto-settings').select('key,value')
+      .in('key', ['tva_code', 'tva_rate', 'tva_enabled', 'promotion_pct'])
+      .then(({ data }) => {
+        if (!data) return;
+        const m = Object.fromEntries(data.map((r: any) => [r.key, r.value]));
+        if (m.tva_code)      setTvaCode(m.tva_code);
+        if (m.tva_rate)      setTvaRate(m.tva_rate);
+        if (m.tva_enabled)   setTvaEnabled(m.tva_enabled);
+        if (m.promotion_pct) setPromoPercent(m.promotion_pct);
+      });
+  }, []);
+
+  async function saveTicketSettings() {
+    setTicketSaving(true);
+    setTicketSaved(false);
+    const { error } = await supabase.from('resto-settings').upsert([
+      { key: 'tva_code',      value: tvaCode },
+      { key: 'tva_rate',      value: tvaRate },
+      { key: 'tva_enabled',   value: tvaEnabled },
+      { key: 'promotion_pct', value: promoPercent },
+    ], { onConflict: 'key' });
+    setTicketSaving(false);
+    if (error) {
+      alert('Erreur de sauvegarde : ' + error.message);
+      return;
+    }
+    setTicketSaved(true);
+    setTimeout(() => setTicketSaved(false), 3000);
+  }
 
   async function changePassword() {
     setPwError('');
@@ -72,7 +111,8 @@ export default function SettingsPage() {
     { id: 'qr', label: 'QR Codes Tables', icon: QrCode, adminOnly: true },
     { id: 'notifications', label: 'Notifications', icon: Bell, adminOnly: true },
     { id: 'security', label: 'Sécurité', icon: Shield, adminOnly: true },
-    { id: 'design', label: 'Design UI', icon: Palette, adminOnly: true },
+    { id: 'design',  label: 'Design UI',    icon: Palette,   adminOnly: true },
+    { id: 'ticket',  label: 'Ticket / TVA', icon: FileText,  adminOnly: true },
   ];
 
   const tabs = allTabs.filter(t => !t.adminOnly || isAdmin);
@@ -269,6 +309,125 @@ export default function SettingsPage() {
             </div>
             <h3 style={{ fontSize: '1.3rem', fontWeight: '900', marginBottom: '0.75rem' }}>Personnalisation visuelle</h3>
             <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto', lineHeight: 1.7 }}>Modifiez vos couleurs primaires, vos polices et vos logos pour correspondre à votre identité de marque.</p>
+          </div>
+        )}
+
+        {/* ── Ticket / TVA (admin only) ── */}
+        {activeTab === 'ticket' && (
+          <div className="animate-fade-in" style={{ maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: '900', marginBottom: '0.25rem' }}>Ticket de caisse</h2>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Paramètres appliqués automatiquement sur chaque ticket imprimé.</p>
+              </div>
+              <button
+                onClick={saveTicketSettings}
+                disabled={ticketSaving}
+                className="btn-primary"
+                style={{ padding: '0.7rem 1.4rem', boxShadow: 'var(--shadow-glow)', opacity: ticketSaving ? 0.7 : 1, cursor: ticketSaving ? 'not-allowed' : 'pointer' }}
+              >
+                <Save size={16} /> {ticketSaving ? 'Sauvegarde…' : 'ENREGISTRER'}
+              </button>
+            </div>
+
+            {ticketSaved && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.875rem 1.1rem', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px' }}>
+                <CheckCircle size={16} color="var(--accent-success)" />
+                <p style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--accent-success)' }}>Paramètres enregistrés avec succès !</p>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+              {/* TVA activée */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>TVA ACTIVÉE</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {[['true', 'Oui'], ['false', 'Non (NÉANT)']].map(([val, lbl]) => (
+                    <button key={val} onClick={() => setTvaEnabled(val)}
+                      style={{ flex: 1, padding: '0.7rem', borderRadius: '10px', border: `1.5px solid ${tvaEnabled === val ? 'var(--accent-primary)' : 'var(--border-color)'}`, background: tvaEnabled === val ? 'rgba(249,115,22,0.08)' : 'var(--bg-tertiary)', color: tvaEnabled === val ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: '800', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TVA code */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>CODE TVA</label>
+                <input type="number" min="0" value={tvaCode} onChange={e => setTvaCode(e.target.value)} style={inputStyle} placeholder="1" />
+              </div>
+
+              {/* TVA rate */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>TAUX TVA (%)</label>
+                <div style={{ position: 'relative' }}>
+                  <input type="number" min="0" max="100" value={tvaRate} onChange={e => setTvaRate(e.target.value)} style={{ ...inputStyle, paddingRight: '2.5rem' }} placeholder="18" />
+                  <span style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: '900' }}>%</span>
+                </div>
+              </div>
+
+              {/* Promotion */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>RÉDUCTION (%)</label>
+                <div style={{ position: 'relative' }}>
+                  <input type="number" min="0" max="100" value={promoPercent} onChange={e => setPromoPercent(e.target.value)} style={{ ...inputStyle, paddingRight: '2.5rem' }} placeholder="0" />
+                  <span style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: '900' }}>%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Preview */}
+            {(() => {
+              const MONO_P = '"Courier New", Courier, monospace';
+              const BEBAS_P = 'var(--font-bebas), "Bebas Neue", sans-serif';
+              const rate = Number(tvaRate) || 18;
+              const promo = Number(promoPercent) || 0;
+              const net = promo > 0 ? 5000 - Math.round(5000 * promo / 100) : 5000;
+              const tvaVal = tvaEnabled === 'true' ? Math.round(net * rate / (100 + rate)) : 0;
+              const ht = net - tvaVal;
+              return (
+                <div style={{ padding: '1.25rem', background: 'var(--bg-tertiary)', borderRadius: '14px', border: '1px dashed var(--border-color)', fontFamily: 'var(--font-oswald), sans-serif', fontSize: '11px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                  <p style={{ fontSize: '0.7rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '8px' }}>APERÇU TICKET</p>
+                  <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+                    <p style={{ fontFamily: BEBAS_P, fontSize: '20px', letterSpacing: '0.12em', margin: 0 }}>MARMITE D'OR</p>
+                    <p style={{ fontFamily: BEBAS_P, fontSize: '9px', letterSpacing: '0.18em', color: '#888', margin: '1px 0 2px' }}>RESTAURANT · BAR</p>
+                  </div>
+                  <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }} />
+                  <div style={{ display: 'flex', fontFamily: BEBAS_P, fontSize: '10px', letterSpacing: '0.08em', color: '#666' }}>
+                    <span style={{ width: '24px' }}>CODE</span><span style={{ flex: 1 }}>NOM DU PRODUIT</span><span style={{ width: '58px', textAlign: 'right' }}>MONTANT</span>
+                  </div>
+                  <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }} />
+                  <div style={{ display: 'flex', fontSize: '10px', fontWeight: 300 }}>
+                    <span style={{ width: '24px', color: '#999' }}>01</span><span style={{ flex: 1 }}>EXEMPLE PRODUIT</span><span style={{ width: '58px', textAlign: 'right' }}>5 000</span>
+                  </div>
+                  <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }} />
+                  <div style={{ display: 'flex', fontFamily: BEBAS_P, fontSize: '14px' }}>
+                    <span style={{ flex: 1 }}>TOTAL</span><span>5 000 F</span>
+                  </div>
+                  {promo > 0 && <>
+                    <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }} />
+                    <div style={{ display: 'flex', fontSize: '10px', color: '#C00' }}><span style={{ flex: 1 }}>RÉDUCTION ({promo}%)</span><span>-{Math.round(5000 * promo / 100).toLocaleString()} F</span></div>
+                    <div style={{ display: 'flex', fontFamily: BEBAS_P, fontSize: '13px' }}><span style={{ flex: 1 }}>NET À PAYER</span><span>{net.toLocaleString()} F</span></div>
+                  </>}
+                  <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }} />
+                  {tvaEnabled === 'true' ? (
+                    <div style={{ padding: '0 8px', fontSize: '9px' }}>
+                      <div style={{ display: 'flex', fontFamily: BEBAS_P, color: '#666', fontSize: '9px' }}>
+                        <span style={{ width: '18px', textAlign: 'center' }}>TVA</span><span style={{ width: '32px', textAlign: 'center' }}>TAUX</span><span style={{ flex: 1, textAlign: 'right' }}>VAL TVA</span><span style={{ flex: 1, textAlign: 'right' }}>MONTANT HT</span>
+                      </div>
+                      <div style={{ display: 'flex', fontWeight: 300, marginTop: '2px' }}>
+                        <span style={{ width: '18px', textAlign: 'center' }}>{tvaCode || 1}</span><span style={{ width: '32px', textAlign: 'center' }}>{rate.toFixed(2).replace('.', ',')}</span><span style={{ flex: 1, textAlign: 'right' }}>{tvaVal.toLocaleString()}</span><span style={{ flex: 1, textAlign: 'right' }}>{ht.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ textAlign: 'center', fontSize: '9px', fontWeight: 300, letterSpacing: '0.1em', color: '#888', margin: 0 }}>TVA : NÉANT</p>
+                  )}
+                  <p style={{ textAlign: 'center', fontFamily: MONO_P, fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', margin: '6px 0 2px' }}>ABCD123456</p>
+                  <p style={{ textAlign: 'center', fontSize: '9px', fontWeight: 300, color: '#888', margin: 0 }}>CAISSE 01 · CAISSIER ADMIN</p>
+                  <p style={{ textAlign: 'center', fontSize: '11px', marginTop: '4px' }}>Merci de votre fidélité !</p>
+                </div>
+              );
+            })()}
           </div>
         )}
 
