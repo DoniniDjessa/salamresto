@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Product, User, ProductVariant, ProductSizeOption } from '@/types';
 import {
   Activity, Users, Utensils, Wallet, PieChart,
-  Plus, Trash2, Upload, ChevronRight, TrendingUp, Truck, RotateCcw,
+  Plus, Trash2, Upload, ChevronRight, TrendingUp, Truck,
   Monitor, Smartphone, CreditCard, UserCircle,
   UserCheck, Edit2, X, ImagePlus, UserPlus, ShoppingBag, ArrowUpRight, ArrowDownRight,
   Search
@@ -62,7 +62,6 @@ function AdminContent() {
   const [uploading,          setUploading]          = useState(false);
   const [filterCategory,     setFilterCategory]     = useState('all');
   const [menuSearch,         setMenuSearch]         = useState('');
-  const [menuFilterStatus,   setMenuFilterStatus]   = useState<'all'|'active'|'archived'>('active');
 
   // ── Menu: déclinaisons (simple — non-variant products) ──
   const [simpleDecls,  setSimpleDecls]  = useState<ProductSizeOption[]>([]);
@@ -269,14 +268,8 @@ function AdminContent() {
   }
 
   async function deleteProduct(id: string) {
-    if (!confirm('Retirer ce produit du menu ? Il ne sera plus disponible aux commandes mais les ventes passées restent intactes.')) return;
-    const { error } = await supabase.from('resto-products').update({ available: false }).eq('id', id);
-    if (error) { alert('Erreur: ' + error.message); return; }
-    fetchData();
-  }
-
-  async function restoreProduct(id: string) {
-    const { error } = await supabase.from('resto-products').update({ available: true }).eq('id', id);
+    if (!confirm('Supprimer ce produit du menu ? Cette action est irréversible.')) return;
+    const { error } = await supabase.from('resto-products').delete().eq('id', id);
     if (error) { alert('Erreur: ' + error.message); return; }
     fetchData();
   }
@@ -615,10 +608,10 @@ function AdminContent() {
 
           {/* ══ MENU ══ */}
           {activeTab === 'menu' && (
-            <div style={{ display:'grid', gridTemplateColumns:'420px 1fr', gap:'2rem', alignItems:'start' }}>
+            <div className="menu-grid">
 
               {/* ── Add product form — sticky so it stays in view while list scrolls ── */}
-              <div style={{ ...card, position:'sticky', top:'2rem', maxHeight:'calc(100vh - 5rem)', overflowY:'auto' }}>
+              <div className="menu-form-panel">
                 <h2 style={{ fontSize:'1.05rem', fontWeight:'900', marginBottom:'1.25rem' }}>Ajouter un produit</h2>
 
                 {/* Category selector */}
@@ -783,19 +776,6 @@ function AdminContent() {
                       style={{ width:'100%', padding:'0.55rem 0.75rem 0.55rem 2.25rem', borderRadius:'10px', border:'1.5px solid var(--border-color)', background:'var(--bg-secondary)', fontSize:'0.82rem', fontWeight:'600', color:'var(--text-primary)', outline:'none' }}
                     />
                   </div>
-                  {/* Status toggle */}
-                  <div style={{ display:'flex', background:'var(--bg-tertiary)', borderRadius:'10px', padding:'3px', gap:'2px', flexShrink:0 }}>
-                    {(['active','all','archived'] as const).map(s=>(
-                      <button key={s} onClick={()=>setMenuFilterStatus(s)}
-                        style={{ padding:'0.35rem 0.75rem', borderRadius:'8px', border:'none', fontWeight:'800', fontSize:'0.65rem', cursor:'pointer', transition:'all 0.15s', letterSpacing:'0.04em',
-                          background: menuFilterStatus===s ? (s==='archived' ? 'var(--accent-danger)' : 'var(--accent-primary)') : 'transparent',
-                          color: menuFilterStatus===s ? 'white' : 'var(--text-muted)',
-                          boxShadow: menuFilterStatus===s ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
-                        }}>
-                        {s==='active'?'ACTIFS':s==='archived'?'RETIRÉS':'TOUS'}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Category chips */}
@@ -814,8 +794,7 @@ function AdminContent() {
                   const total = products.filter(p => {
                     const matchCat    = filterCategory==='all' || p.category===filterCategory;
                     const matchSearch = !menuSearch.trim() || norm(p.name).includes(norm(menuSearch));
-                    const matchStatus = menuFilterStatus==='all' || (menuFilterStatus==='active' ? p.available!==false : p.available===false);
-                    return matchCat && matchSearch && matchStatus;
+                    return matchCat && matchSearch;
                   }).length;
                   return total === 0 ? (
                     <p style={{ textAlign:'center', color:'var(--text-muted)', padding:'2rem 0', fontSize:'0.82rem' }}>Aucun produit trouvé</p>
@@ -829,10 +808,8 @@ function AdminContent() {
                     const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
                     const matchCat    = filterCategory==='all' || p.category===filterCategory;
                     const matchSearch = !menuSearch.trim() || norm(p.name).includes(norm(menuSearch));
-                    const matchStatus = menuFilterStatus==='all' || (menuFilterStatus==='active' ? p.available!==false : p.available===false);
-                    return matchCat && matchSearch && matchStatus;
+                    return matchCat && matchSearch;
                   }).map(p=>{
-                    const isArchived = p.available === false;
                     const priceLine = (() => {
                       if (p.variants?.length) {
                         const prices = [...new Set(p.variants.flatMap(v => v.options?.length ? v.options.map(o=>o.price) : v.price?[v.price]:[] ))].sort((a,b)=>a-b);
@@ -845,31 +822,25 @@ function AdminContent() {
                       return p.price.toLocaleString()+' F';
                     })();
                     return (
-                      <div key={p.id} className={isArchived ? '' : 'hover-scale'} style={{ display:'flex', alignItems:'center', gap:'1rem', padding:'0.75rem 1rem', background: isArchived ? 'var(--bg-tertiary)' : 'white', border:'1px solid var(--border-color)', borderRadius:'14px', boxShadow:'var(--shadow-sm)', opacity: isArchived ? 0.6 : 1 }}>
+                      <div key={p.id} className="hover-scale" style={{ display:'flex', alignItems:'center', gap:'1rem', padding:'0.75rem 1rem', background:'white', border:'1px solid var(--border-color)', borderRadius:'14px', boxShadow:'var(--shadow-sm)' }}>
                         {/* Thumbnail */}
-                        <div style={{ width:'52px', height:'52px', borderRadius:'10px', background: p.image?`url(${p.image}) center/cover`:'var(--bg-tertiary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.4rem', overflow:'hidden', flexShrink:0, filter: isArchived ? 'grayscale(1)' : 'none' }}>
+                        <div style={{ width:'52px', height:'52px', borderRadius:'10px', background: p.image?`url(${p.image}) center/cover`:'var(--bg-tertiary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.4rem', overflow:'hidden', flexShrink:0 }}>
                           {!p.image && '🥘'}
                         </div>
                         {/* Info */}
                         <div style={{ flex:1, minWidth:0 }}>
-                          <h4 style={{ fontWeight:'800', fontSize:'0.875rem', marginBottom:'0.1rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration: isArchived ? 'line-through' : 'none' }}>{p.name}</h4>
+                          <h4 style={{ fontWeight:'800', fontSize:'0.875rem', marginBottom:'0.1rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</h4>
                           <p style={{ fontSize:'0.62rem', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-                            {p.category}{isArchived && <span style={{ color:'var(--accent-danger)', fontWeight:'900', marginLeft:'0.5rem' }}>RETIRÉ</span>}
+                            {p.category}
                           </p>
                         </div>
                         {/* Prices */}
-                        <p style={{ color: isArchived ? 'var(--text-muted)' : 'var(--accent-primary)', fontWeight:'900', fontSize:'0.82rem', flexShrink:0, whiteSpace:'nowrap' }}>{priceLine}</p>
+                        <p style={{ color:'var(--accent-primary)', fontWeight:'900', fontSize:'0.82rem', flexShrink:0, whiteSpace:'nowrap' }}>{priceLine}</p>
                         {/* Actions */}
                         <div style={{ display:'flex', gap:'0.4rem', flexShrink:0 }}>
-                          {!isArchived && (
-                            <button onClick={()=>{ setEditingProduct(p); setEditProdName(p.name); setEditProdPrice(p.price>0?p.price.toString():''); setEditProdCategory(p.category||''); setEditFile(null); setEditVariants(p.variants?JSON.parse(JSON.stringify(p.variants)):[]); setEditSimpleDecls(p.options?JSON.parse(JSON.stringify(p.options)):[]); setEditOpenDeclFor(null); }}
-                              style={{ background:'var(--bg-secondary)', border:'1px solid var(--border-color)', color:'var(--accent-primary)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Edit2 size={14}/></button>
-                          )}
-                          {isArchived ? (
-                            <button onClick={()=>restoreProduct(p.id)} title="Remettre au menu" style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', color:'var(--accent-success)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><RotateCcw size={14}/></button>
-                          ) : (
-                            <button onClick={()=>deleteProduct(p.id)} title="Retirer du menu" style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.15)', color:'var(--accent-danger)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Trash2 size={14}/></button>
-                          )}
+                          <button onClick={()=>{ setEditingProduct(p); setEditProdName(p.name); setEditProdPrice(p.price>0?p.price.toString():''); setEditProdCategory(p.category||''); setEditFile(null); setEditVariants(p.variants?JSON.parse(JSON.stringify(p.variants)):[]); setEditSimpleDecls(p.options?JSON.parse(JSON.stringify(p.options)):[]); setEditOpenDeclFor(null); }}
+                            style={{ background:'var(--bg-secondary)', border:'1px solid var(--border-color)', color:'var(--accent-primary)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Edit2 size={14}/></button>
+                          <button onClick={()=>deleteProduct(p.id)} title="Supprimer du menu" style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.15)', color:'var(--accent-danger)', cursor:'pointer', borderRadius:'8px', width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center' }}><Trash2 size={14}/></button>
                         </div>
                       </div>
                     );
@@ -893,7 +864,7 @@ function AdminContent() {
                     <div style={{ flex:1, overflowY:'auto', padding:'1.25rem 1.5rem', display:'flex', flexDirection:'column', gap:'1rem' }}>
 
                       {/* ── Base fields ── */}
-                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+                      <div className="edit-modal-fields">
                         <div>
                           <p style={{ fontSize:'0.62rem', fontWeight:'900', color:'var(--text-muted)', letterSpacing:'0.08em', marginBottom:'0.35rem' }}>NOM *</p>
                           <input style={IS} value={editProdName} onChange={e=>setEditProdName(e.target.value)} placeholder="Nom du plat" />

@@ -1,8 +1,8 @@
 "use client";
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Order, OrderStatus } from '@/types';
-import { ChefHat, Clock, CheckCircle2, Play, Coffee } from 'lucide-react';
+import { ChefHat, Clock, CheckCircle2, Play, Coffee, Volume2, VolumeX } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
 
 const CAVE_CATS = new Set(['boissons', 'cave', 'thé/café', 'the/cafe']);
@@ -108,6 +108,9 @@ export default function KitchenPage() {
   const [activeTab,    setActiveTab]    = useState<'cuisine' | 'cave'>('cuisine');
   const [mobileColIdx, setMobileColIdx] = useState(0);
   const [isMobile,     setIsMobile]     = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundRef   = useRef(true);
+  const audioCtx   = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -116,11 +119,62 @@ export default function KitchenPage() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  // Unlock AudioContext on first user interaction (required by Android/iOS)
+  useEffect(() => {
+    const unlock = () => {
+      if (!audioCtx.current) {
+        audioCtx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
+    };
+    document.addEventListener('touchstart', unlock, { once: true });
+    document.addEventListener('click',      unlock, { once: true });
+    return () => {
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click',      unlock);
+    };
+  }, []);
+
+  function playBell() {
+    if (!soundRef.current) return;
+    try {
+      const ctx = audioCtx.current || new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtx.current = ctx;
+      if (ctx.state === 'suspended') ctx.resume();
+      // Three dings: low → high → low
+      ([[660, 0], [880, 0.18], [660, 0.36]] as [number, number][]).forEach(([freq, delay]) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        const t = ctx.currentTime + delay;
+        osc.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.5, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+        osc.start(t);
+        osc.stop(t + 0.75);
+      });
+    } catch (_) {/* audio unavailable */}
+  }
+
+  function toggleSound() {
+    const next = !soundRef.current;
+    soundRef.current = next;
+    setSoundEnabled(next);
+  }
+
   useEffect(() => {
     fetchOrders();
     loadProducts();
     const ch = supabase.channel('resto-orders-kds')
-      .on('postgres_changes', { event: '*', table: 'resto-orders', schema: 'public' }, fetchOrders)
+      .on('postgres_changes', { event: 'INSERT', table: 'resto-orders', schema: 'public' }, () => {
+        playBell();
+        fetchOrders();
+      })
+      .on('postgres_changes', { event: 'UPDATE', table: 'resto-orders', schema: 'public' }, fetchOrders)
+      .on('postgres_changes', { event: 'DELETE', table: 'resto-orders', schema: 'public' }, fetchOrders)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -200,8 +254,13 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          {/* Cuisine / Cave switcher */}
-          <div style={{ display: 'flex', gap: 0, background: 'var(--bg-secondary)', borderRadius: '9px', padding: '2px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+          {/* Sound toggle + Cuisine / Cave switcher */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          <button onClick={toggleSound} title={soundEnabled ? 'Couper le son' : 'Activer le son'}
+            style={{ width: isMobile ? '30px' : '36px', height: isMobile ? '30px' : '36px', borderRadius: '9px', border: '1px solid var(--border-color)', background: soundEnabled ? 'rgba(249,115,22,0.08)' : 'var(--bg-secondary)', color: soundEnabled ? 'var(--accent-primary)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            {soundEnabled ? <Volume2 size={isMobile ? 13 : 16} /> : <VolumeX size={isMobile ? 13 : 16} />}
+          </button>
+          <div style={{ display: 'flex', gap: 0, background: 'var(--bg-secondary)', borderRadius: '9px', padding: '2px', border: '1px solid var(--border-color)' }}>
             {(['cuisine', 'cave'] as const).map(tab => (
               <button key={tab} onClick={() => { setActiveTab(tab); setMobileColIdx(0); }}
                 style={{ padding: isMobile ? '0.3rem 0.6rem' : '0.4rem 1.1rem', borderRadius: '7px', background: activeTab === tab ? 'white' : 'transparent', color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', fontWeight: '800', fontSize: isMobile ? '0.6rem' : '0.78rem', cursor: 'pointer', transition: 'all 0.15s', boxShadow: activeTab === tab ? 'var(--shadow-sm)' : 'none', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -212,6 +271,7 @@ export default function KitchenPage() {
                 )}
               </button>
             ))}
+          </div>
           </div>
         </div>
 

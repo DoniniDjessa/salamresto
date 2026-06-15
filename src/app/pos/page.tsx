@@ -6,11 +6,12 @@ import {
   TrendingUp, ShoppingBag, Clock, CheckCircle2,
   CreditCard, Search, Monitor, Smartphone, Utensils,
   Truck, MapPin, X, Pencil, Trash2, Check, Calendar, ChevronLeft, ChevronRight,
-  Eye, User, Phone, ArrowUpDown, GitMerge
+  Eye, User, Phone, ArrowUpDown, GitMerge, Printer, Plus, Trash
 } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
 import ModalPortal from '@/components/ModalPortal';
 import { useAuth } from '@/context/AuthContext';
+import ReceiptModal, { ReceiptOrder } from '@/components/ReceiptModal';
 
 /* ─── helpers ──────────────────────────────────────────────── */
 const todayStart = () => {
@@ -174,6 +175,24 @@ function VentesContent() {
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryOrder, setDeliveryOrder] = useState<any | null>(null);
   const [deliveryForm, setDeliveryForm] = useState({ customername: '', contactphone: '', deliveryaddress: '', startNow: true });
+
+  const [receiptOrder, setReceiptOrder] = useState<ReceiptOrder | null>(null);
+
+  const [showManualSaleModal, setShowManualSaleModal] = useState(false);
+  interface ManualSaleItem { name: string; quantity: string; price: string; }
+  const blankItem = (): ManualSaleItem => ({ name: '', quantity: '1', price: '' });
+  const defaultManualForm = () => ({
+    date: new Date().toISOString().slice(0, 16),
+    type: 'comptoir' as 'salle' | 'comptoir' | 'external',
+    tablenumber: '',
+    customername: '',
+    contactphone: '',
+    payment_method: 'cash' as 'cash' | 'wave' | 'orange',
+    items: [blankItem()],
+    manualTotal: '',
+  });
+  const [manualForm, setManualForm] = useState(defaultManualForm);
+  const [manualSaving, setManualSaving] = useState(false);
 
   const [allProducts, setAllProducts] = useState<any[]>([]);
   useEffect(() => {
@@ -372,6 +391,39 @@ function VentesContent() {
     fetchOrders();
   }
 
+  async function saveManualSale() {
+    const f = manualForm;
+    const parsedItems = f.items
+      .map(i => ({ name: i.name.trim(), quantity: Math.max(1, parseInt(i.quantity) || 1), price: parseFloat(i.price) || 0 }))
+      .filter(i => i.name);
+
+    if (parsedItems.length === 0) { alert('Ajoutez au moins un article.'); return; }
+
+    const computedTotal = parsedItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    const total = computedTotal > 0 ? computedTotal : parseFloat(f.manualTotal) || 0;
+    if (total <= 0) { alert('Le montant total doit être supérieur à 0.'); return; }
+
+    const newOrder: any = {
+      type: f.type,
+      status: 'termine',
+      items: parsedItems,
+      total,
+      payment_method: f.payment_method,
+      created_at: new Date(f.date).toISOString(),
+    };
+    if (f.type === 'salle' && f.tablenumber) newOrder.tablenumber = parseInt(f.tablenumber);
+    if (f.type !== 'salle' && f.customername) newOrder.customername = f.customername;
+    if (f.type === 'external' && f.contactphone) newOrder.contactphone = f.contactphone;
+
+    setManualSaving(true);
+    const { error } = await supabase.from('resto-orders').insert([newOrder]);
+    setManualSaving(false);
+    if (error) { alert('Erreur: ' + error.message); return; }
+    setShowManualSaleModal(false);
+    setManualForm(defaultManualForm());
+    fetchOrders();
+  }
+
   // Reset page whenever filter or sort changes
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [search, period, startDate, endDate, monthPick, sortAsc, catFilter]);
 
@@ -441,6 +493,12 @@ function VentesContent() {
             </p>
           </div>
         </div>
+        {isSuperAdmin && (
+          <button onClick={() => { setManualForm(defaultManualForm()); setShowManualSaleModal(true); }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 1.25rem', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '800', fontSize: '0.82rem', cursor: 'pointer', boxShadow: 'var(--shadow-glow)', whiteSpace: 'nowrap' }}>
+            <Plus size={16} /> Enregistrer une vente
+          </button>
+        )}
       </header>
 
       {/* ── Filters ── */}
@@ -715,6 +773,10 @@ function VentesContent() {
                                   <CreditCard size={12}/> ENCAISSER
                                 </button>
                               )}
+                              <button onClick={() => setReceiptOrder(o)} title="Imprimer le reçu"
+                                style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent-primary)', flexShrink: 0 }}>
+                                <Printer size={13} />
+                              </button>
                               {isSuperAdmin && (
                                 <>
                                   <button onClick={() => setDetailOrder(o)} title="Modifier (SuperAdmin)"
@@ -750,6 +812,10 @@ function VentesContent() {
                                   <CreditCard size={12}/> ENCAISSER
                                 </button>
                               )}
+                              <button onClick={() => setReceiptOrder(o)} title="Imprimer le reçu"
+                                style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent-primary)', flexShrink: 0 }}>
+                                <Printer size={13} />
+                              </button>
                               {isSuperAdmin && (
                                 <>
                                   <button onClick={() => openEditModal(o)} title="Modifier montant / date (SuperAdmin)"
@@ -1256,6 +1322,157 @@ function VentesContent() {
         </div>
       )}
 
+      {/* ── Manual Sale Modal (superAdmin only) ── */}
+      {showManualSaleModal && (
+        <div onClick={() => setShowManualSaleModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '20px', width: '100%', maxWidth: '560px', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+
+            {/* Header */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                  <Plus size={18} color="var(--accent-primary)" />
+                  <h3 style={{ fontWeight: '900', fontSize: '1rem', margin: 0 }}>Enregistrer une vente manuelle</h3>
+                </div>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                  Directement enregistrée comme vente réglée · Sans passer par la cuisine
+                </p>
+              </div>
+              <button onClick={() => setShowManualSaleModal(false)} style={{ background: 'var(--bg-tertiary)', border: 'none', borderRadius: '8px', padding: '0.4rem', cursor: 'pointer', flexShrink: 0 }}>
+                <X size={16} color="var(--text-secondary)" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+              {/* Date */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>DATE ET HEURE</label>
+                <input type="datetime-local" value={manualForm.date}
+                  onChange={e => setManualForm(f => ({ ...f, date: e.target.value }))}
+                  style={{ width: '100%', padding: '0.7rem 0.875rem', borderRadius: '10px', border: '1.5px solid var(--border-color)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }} />
+              </div>
+
+              {/* Type + table/customer */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>TYPE DE VENTE</label>
+                  <select value={manualForm.type} onChange={e => setManualForm(f => ({ ...f, type: e.target.value as any }))}
+                    style={{ width: '100%', padding: '0.7rem 0.875rem', borderRadius: '10px', border: '1.5px solid var(--border-color)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-body)', background: 'white' }}>
+                    <option value="salle">Salle (table)</option>
+                    <option value="comptoir">Comptoir</option>
+                    <option value="external">Livraison</option>
+                  </select>
+                </div>
+                <div>
+                  {manualForm.type === 'salle' ? (
+                    <>
+                      <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>NUMÉRO DE TABLE</label>
+                      <input type="number" min={1} placeholder="Ex: 5" value={manualForm.tablenumber}
+                        onChange={e => setManualForm(f => ({ ...f, tablenumber: e.target.value }))}
+                        style={{ width: '100%', padding: '0.7rem 0.875rem', borderRadius: '10px', border: '1.5px solid var(--border-color)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }} />
+                    </>
+                  ) : (
+                    <>
+                      <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>NOM DU CLIENT</label>
+                      <input type="text" placeholder="Nom client" value={manualForm.customername}
+                        onChange={e => setManualForm(f => ({ ...f, customername: e.target.value }))}
+                        style={{ width: '100%', padding: '0.7rem 0.875rem', borderRadius: '10px', border: '1.5px solid var(--border-color)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }} />
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Contact phone (external only) */}
+              {manualForm.type === 'external' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>TÉLÉPHONE</label>
+                  <input type="text" placeholder="+225 …" value={manualForm.contactphone}
+                    onChange={e => setManualForm(f => ({ ...f, contactphone: e.target.value }))}
+                    style={{ width: '100%', padding: '0.7rem 0.875rem', borderRadius: '10px', border: '1.5px solid var(--border-color)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }} />
+                </div>
+              )}
+
+              {/* Payment method */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>MODE DE PAIEMENT</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {(['cash', 'wave', 'orange'] as const).map(m => (
+                    <button key={m} type="button" onClick={() => setManualForm(f => ({ ...f, payment_method: m }))}
+                      style={{ flex: 1, padding: '0.55rem', borderRadius: '9px', border: `1.5px solid ${manualForm.payment_method === m ? 'var(--accent-primary)' : 'var(--border-color)'}`, background: manualForm.payment_method === m ? 'rgba(249,115,22,0.08)' : 'white', color: manualForm.payment_method === m ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: '800', fontSize: '0.72rem', cursor: 'pointer', letterSpacing: '0.04em' }}>
+                      {m === 'cash' ? 'ESPÈCES' : m === 'wave' ? 'WAVE' : 'ORANGE'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Items */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label style={{ fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>ARTICLES</label>
+                  <button type="button" onClick={() => setManualForm(f => ({ ...f, items: [...f.items, blankItem()] }))}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.6rem', borderRadius: '7px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-secondary)' }}>
+                    <Plus size={12} /> Ajouter
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {manualForm.items.map((item, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 34px', gap: '0.4rem', alignItems: 'center' }}>
+                      <input placeholder="Nom de l'article" value={item.name}
+                        onChange={e => setManualForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], name: e.target.value }; return { ...f, items }; })}
+                        style={{ padding: '0.6rem 0.75rem', borderRadius: '9px', border: '1.5px solid var(--border-color)', fontSize: '0.82rem', outline: 'none', fontFamily: 'var(--font-body)' }} />
+                      <input type="number" min={1} placeholder="Qté" value={item.quantity}
+                        onChange={e => setManualForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], quantity: e.target.value }; return { ...f, items }; })}
+                        style={{ padding: '0.6rem 0.75rem', borderRadius: '9px', border: '1.5px solid var(--border-color)', fontSize: '0.82rem', outline: 'none', textAlign: 'center', fontFamily: 'var(--font-body)' }} />
+                      <input type="number" min={0} placeholder="Prix (F)" value={item.price}
+                        onChange={e => setManualForm(f => { const items = [...f.items]; items[idx] = { ...items[idx], price: e.target.value }; return { ...f, items }; })}
+                        style={{ padding: '0.6rem 0.75rem', borderRadius: '9px', border: '1.5px solid var(--border-color)', fontSize: '0.82rem', outline: 'none', fontFamily: 'var(--font-body)' }} />
+                      <button type="button" disabled={manualForm.items.length === 1} onClick={() => setManualForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))}
+                        style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: manualForm.items.length === 1 ? 'not-allowed' : 'pointer', color: manualForm.items.length === 1 ? 'var(--text-muted)' : 'var(--accent-danger)', flexShrink: 0 }}>
+                        <Trash size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Manual total override */}
+              {(() => {
+                const computed = manualForm.items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseInt(i.quantity) || 1), 0);
+                return computed === 0 ? (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.63rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '0.4rem' }}>MONTANT TOTAL (F) — requis si pas de prix par article</label>
+                    <input type="number" min={0} placeholder="Ex: 15000" value={manualForm.manualTotal}
+                      onChange={e => setManualForm(f => ({ ...f, manualTotal: e.target.value }))}
+                      style={{ width: '100%', padding: '0.7rem 0.875rem', borderRadius: '10px', border: '1.5px solid var(--accent-primary)', fontSize: '0.875rem', fontWeight: '800', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }} />
+                  </div>
+                ) : (
+                  <div style={{ padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '900', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>TOTAL CALCULÉ</span>
+                    <span style={{ fontSize: '1.2rem', fontWeight: '900', color: 'var(--accent-success)' }}>{computed.toLocaleString()} F</span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button onClick={saveManualSale} disabled={manualSaving}
+                  style={{ flex: 1, padding: '0.875rem', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '0.875rem', cursor: manualSaving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: 'var(--shadow-glow)', opacity: manualSaving ? 0.7 : 1 }}>
+                  <Check size={15} /> {manualSaving ? 'Enregistrement…' : 'ENREGISTRER LA VENTE'}
+                </button>
+                <button onClick={() => setShowManualSaleModal(false)}
+                  style={{ padding: '0.875rem 1.1rem', background: 'white', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delivery modal */}
       {showDeliveryModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1282,6 +1499,10 @@ function VentesContent() {
       )}
 
       </ModalPortal>
+
+      {receiptOrder && (
+        <ReceiptModal order={receiptOrder} onClose={() => setReceiptOrder(null)} />
+      )}
     </div>
     </RoleGuard>
   );

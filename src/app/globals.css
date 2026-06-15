@@ -309,6 +309,47 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.10); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.20); }
 
+/* ─── Admin — Menu page responsive ──────────────────────── */
+.menu-grid {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.menu-form-panel {
+  background: #FFFFFF;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+  padding: 1.75rem;
+  position: sticky;
+  top: 2rem;
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+}
+
+.edit-modal-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 960px) {
+  .menu-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .menu-form-panel {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+  .edit-modal-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ─── Receipt Print ──────────────────────────────────────── */
 @media print {
 
